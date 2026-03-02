@@ -12,6 +12,9 @@ AI 기반 여행 플래너 React Native 앱입니다.
 | 모바일 | React Native 0.84 (CLI), TypeScript |
 | 스타일링 | NativeWind v4 (Tailwind CSS) |
 | HTTP 클라이언트 | Axios |
+| 인증 | Laravel Sanctum (Bearer Token) |
+| 로컬 저장소 | AsyncStorage |
+| 키보드 UX | react-native-keyboard-aware-scroll-view |
 | 백엔드 | Laravel (Sail, Docker) |
 | AI | OpenAI GPT-4o-mini |
 | 패키지 매니저 | npm |
@@ -23,17 +26,20 @@ AI 기반 여행 플래너 React Native 앱입니다.
 ```
 PlangoApp/
 ├── src/
-│   ├── components/       # 공통 컴포넌트
+│   ├── components/         # 공통 컴포넌트
 │   ├── screens/
-│   │   └── ChatScreen.js # 채팅 화면
-│   ├── hooks/            # 커스텀 훅
+│   │   ├── ChatScreen.js   # 채팅 화면
+│   │   ├── LoginScreen.js  # 로그인 화면
+│   │   └── RegisterScreen.js # 회원가입 화면
+│   ├── hooks/
+│   │   └── useAuth.js      # 인증 상태 관리 훅
 │   └── services/
-│       └── api.js        # Axios 인스턴스 (API 설정)
-├── App.tsx               # 앱 진입점
-├── global.css            # Tailwind 디렉티브
-├── tailwind.config.js    # NativeWind 설정
-├── babel.config.js       # Babel 설정
-└── metro.config.js       # Metro 번들러 설정
+│       └── api.js          # Axios 인스턴스 (API 설정)
+├── App.tsx                 # 앱 진입점 (인증 상태에 따른 화면 전환)
+├── global.css              # Tailwind 디렉티브
+├── tailwind.config.js      # NativeWind 설정
+├── babel.config.js         # Babel 설정
+└── metro.config.js         # Metro 번들러 설정
 ```
 
 ---
@@ -82,19 +88,36 @@ npx react-native run-android
 
 ## 주요 기능
 
+### 인증 (`LoginScreen.js`, `RegisterScreen.js`, `useAuth.js`)
+
+- 이메일 / 비밀번호 로그인 및 회원가입
+- Laravel Sanctum Bearer Token 발급 및 저장 (AsyncStorage)
+- 앱 재시작 시 토큰 자동 복원 (자동 로그인)
+- 로그아웃 시 서버 토큰 폐기 및 로컬 데이터 삭제
+- 서버 유효성 검사 에러 필드별 표시
+
 ### 채팅 화면 (`ChatScreen.js`)
 
 - 사용자 메시지 입력 및 전송
 - AI 응답 말풍선 표시 (좌/우 구분)
 - 응답 대기 중 로딩 인디케이터
 - Android 하단 내비게이션 바 대응 (`useSafeAreaInsets`)
-- 키보드 표시 시 입력창 자동 이동 (`KeyboardAvoidingView`)
+- 키보드 표시 시 입력창 자동 이동 (Keyboard 이벤트 기반)
+
+### 키보드 UX
+
+- 로그인/회원가입: `KeyboardAwareScrollView`로 화면 자동 스크롤
+- 채팅: `Keyboard.addListener`로 키보드 높이 감지 후 `marginBottom` 적용
+- RN 0.84 Android edge-to-edge 환경에서 올바르게 동작
 
 ### API 연동 (`api.js`)
 
+- `POST /api/auth/register` — 회원가입 및 토큰 수신
+- `POST /api/auth/login` — 로그인 및 토큰 수신
+- `POST /api/auth/logout` — 서버 토큰 폐기
 - `POST /api/chat` — 메시지 전송 및 AI 응답 수신
 - 요청 타임아웃: 30초
-- Laravel 응답 구조: `{ success, message, data: { reply } }`
+- Laravel 응답 구조: `{ success, message, data: { ... } }`
 
 ---
 
@@ -108,10 +131,19 @@ npx react-native run-android
 ./vendor/bin/sail up -d
 ```
 
+### 인증 API
+
+```
+POST /api/auth/register   # 회원가입
+POST /api/auth/login      # 로그인
+POST /api/auth/logout     # 로그아웃 (Bearer Token 필요)
+```
+
 ### 채팅 API
 
 ```
 POST /api/chat
+Authorization: Bearer {token}
 Content-Type: application/json
 
 { "message": "제주도 2박 3일 일정 짜줘" }
