@@ -12,7 +12,7 @@ import axios from 'axios';
  *   - iOS 시뮬레이터     : localhost 사용 가능하나 실제 IP 권장
  *   - 실제 기기          : PC와 같은 Wi-Fi에 연결된 상태에서 PC의 내부 IP 사용
  */
-const API_BASE_URL = 'http://192.168.45.115'; // Laravel Sail (port 80)
+const API_BASE_URL = 'http://192.168.0.46'; // Laravel Sail (port 80)
 
 const api = axios.create({
   baseURL: API_BASE_URL,
