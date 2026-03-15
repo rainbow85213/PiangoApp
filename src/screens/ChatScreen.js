@@ -11,8 +11,10 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import api from '../services/api';
+import {useNotifications} from '../contexts/NotificationContext';
 
-const ChatScreen = ({onLogout, onGoMap, onGoApiTest}) => {
+const ChatScreen = ({onLogout, onGoMap, onGoApiTest, onGoNotifications}) => {
+  const {unreadCount} = useNotifications();
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -124,9 +126,21 @@ const ChatScreen = ({onLogout, onGoMap, onGoApiTest}) => {
 
       {/* 헤더 */}
       <View className="bg-white px-4 py-3 border-b border-gray-200 flex-row items-center justify-between">
-        <TouchableOpacity onPress={onGoMap} className="w-12 items-start">
-          <Icon name="map" size={24} color="#6366f1" />
-        </TouchableOpacity>
+        <View className="flex-row items-center gap-3">
+          <TouchableOpacity onPress={onGoMap}>
+            <Icon name="map" size={24} color="#6366f1" />
+          </TouchableOpacity>
+          {onGoNotifications && (
+            <TouchableOpacity onPress={onGoNotifications} style={{position: 'relative'}}>
+              <Icon name="notifications" size={24} color="#6366f1" />
+              {unreadCount > 0 && (
+                <View style={{position:'absolute', top:-4, right:-4, backgroundColor:'#ef4444', borderRadius:8, minWidth:16, height:16, alignItems:'center', justifyContent:'center', paddingHorizontal:3}}>
+                  <Text style={{color:'#fff', fontSize:9, fontWeight:'700'}}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          )}
+        </View>
         <View className="items-center">
           <Text className="text-lg font-bold text-gray-800">Plango AI</Text>
           <Text className="text-xs text-gray-400 mt-0.5">AI 여행 플래너</Text>
