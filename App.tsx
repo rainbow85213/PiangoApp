@@ -4,21 +4,36 @@
  */
 
 import './global.css';
-import React, {useState} from 'react';
-import {ActivityIndicator, StatusBar, useColorScheme, View} from 'react-native';
+import React, {useEffect, useState} from 'react';
+import {ActivityIndicator, Alert, Platform, StatusBar, useColorScheme, View} from 'react-native';
+import {
+  getMessaging,
+  getToken,
+  onMessage,
+  requestPermission,
+  AuthorizationStatus,
+  registerDeviceForRemoteMessages,
+} from '@react-native-firebase/messaging';
+import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {useAuth} from './src/hooks/useAuth';
 import ChatScreen from './src/screens/ChatScreen';
 import LoginScreen from './src/screens/LoginScreen';
+import MapScreen from './src/screens/MapScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
+import ApiTestScreen from './src/screens/ApiTestScreen';
+import ScheduleDetailScreen from './src/screens/ScheduleDetailScreen';
+import type {ScheduleItem} from './src/types/schedule';
 
-type Screen = 'login' | 'register' | 'chat';
+type Screen = 'login' | 'register';
+type AuthScreen = 'chat' | 'map' | 'scheduleDetail' | 'apiTest';
 
 function AppContent() {
   const {token, isLoading, login, register, logout} = useAuth();
   const [screen, setScreen] = useState<Screen>('login');
+  const [authScreen, setAuthScreen] = useState<AuthScreen>('chat');
+  const [selectedItem, setSelectedItem] = useState<ScheduleItem | null>(null);
 
-  // 앱 시작 시 토큰 복원 중
   if (isLoading) {
     return (
       <View className="flex-1 items-center justify-center bg-gray-50">
@@ -27,12 +42,38 @@ function AppContent() {
     );
   }
 
-  // 로그인 상태 → 채팅 화면
   if (token) {
-    return <ChatScreen onLogout={logout} />;
+    if (authScreen === 'apiTest') {
+      return <ApiTestScreen onGoBack={() => setAuthScreen('chat')} />;
+    }
+    if (authScreen === 'scheduleDetail' && selectedItem) {
+      return (
+        <ScheduleDetailScreen
+          item={selectedItem}
+          onGoBack={() => setAuthScreen('map')}
+        />
+      );
+    }
+    if (authScreen === 'map') {
+      return (
+        <MapScreen
+          onGoBack={() => setAuthScreen('chat')}
+          onSelectItem={item => {
+            setSelectedItem(item);
+            setAuthScreen('scheduleDetail');
+          }}
+        />
+      );
+    }
+    return (
+      <ChatScreen
+        onLogout={logout}
+        onGoMap={() => setAuthScreen('map')}
+        onGoApiTest={() => setAuthScreen('apiTest')}
+      />
+    );
   }
 
-  // 비로그인 상태 → 로그인 / 회원가입
   if (screen === 'register') {
     return (
       <RegisterScreen
@@ -50,14 +91,57 @@ function AppContent() {
   );
 }
 
+async function requestFCMPermissionAndGetToken() {
+  const messaging = getMessaging();
+
+  // iOS: 원격 알림 등록 (getToken 전 필수)
+  if (Platform.OS === 'ios') {
+    await registerDeviceForRemoteMessages(messaging);
+
+    const authStatus = await requestPermission(messaging);
+    const enabled =
+      authStatus === AuthorizationStatus.AUTHORIZED ||
+      authStatus === AuthorizationStatus.PROVISIONAL;
+    if (!enabled) {
+      console.log('[FCM] 알림 권한이 거부되었습니다.');
+      return;
+    }
+  }
+
+  // Android 13+ 권한 요청
+  if (Platform.OS === 'android') {
+    await requestPermission(messaging);
+  }
+
+  // FCM 토큰 발급
+  const fcmToken = await getToken(messaging);
+  console.log('[FCM] Token:', fcmToken);
+  Alert.alert('FCM Token', fcmToken);
+  return fcmToken;
+}
+
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
 
+  useEffect(() => {
+    requestFCMPermissionAndGetToken();
+
+    // 포그라운드 메시지 수신
+    const messaging = getMessaging();
+    const unsubscribe = onMessage(messaging, async remoteMessage => {
+      console.log('[FCM] 포그라운드 메시지:', JSON.stringify(remoteMessage));
+    });
+
+    return unsubscribe;
+  }, []);
+
   return (
-    <SafeAreaProvider>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <AppContent />
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{flex: 1}}>
+      <SafeAreaProvider>
+        <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
+        <AppContent />
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 

@@ -8,10 +8,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import Icon from 'react-native-vector-icons/MaterialIcons';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import api from '../services/api';
 
-const ChatScreen = ({onLogout}) => {
+const ChatScreen = ({onLogout, onGoMap, onGoApiTest}) => {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -49,7 +50,7 @@ const ChatScreen = ({onLogout}) => {
     setIsLoading(true);
 
     try {
-      const response = await api.post('/api/chat', {message: text});
+      const response = await api.post('/chat', {message: text});
 
       // Laravel ApiResponse 구조: { success, message, data: { reply } }
       const replyText =
@@ -123,14 +124,23 @@ const ChatScreen = ({onLogout}) => {
 
       {/* 헤더 */}
       <View className="bg-white px-4 py-3 border-b border-gray-200 flex-row items-center justify-between">
-        <View className="w-12" />
+        <TouchableOpacity onPress={onGoMap} className="w-12 items-start">
+          <Icon name="map" size={24} color="#6366f1" />
+        </TouchableOpacity>
         <View className="items-center">
           <Text className="text-lg font-bold text-gray-800">Plango AI</Text>
           <Text className="text-xs text-gray-400 mt-0.5">AI 여행 플래너</Text>
         </View>
-        <TouchableOpacity onPress={onLogout} className="w-12 items-end">
-          <Text className="text-sm text-gray-400">로그아웃</Text>
-        </TouchableOpacity>
+        <View className="flex-row items-center gap-3">
+          {onGoApiTest && (
+            <TouchableOpacity onPress={onGoApiTest}>
+              <Text className="text-xs text-indigo-400 font-semibold">API</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={onLogout}>
+            <Text className="text-sm text-gray-400">로그아웃</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* 메시지 목록 */}

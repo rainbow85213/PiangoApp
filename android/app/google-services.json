@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "826545785211",
+    "project_id": "tourcast-d7a5d",
+    "storage_bucket": "tourcast-d7a5d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:826545785211:android:ff44159050f1b95de8d5de",
+        "android_client_info": {
+          "package_name": "com.plangoapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAiYcC7frLeq3eJQfXZ0guJp2mFtf6gL9s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
