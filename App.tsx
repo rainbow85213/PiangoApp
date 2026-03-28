@@ -8,7 +8,7 @@ import notifee, {AndroidImportance, EventType} from '@notifee/react-native';
 import messaging from '@react-native-firebase/messaging';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, {useCallback, useEffect, useRef, useState} from 'react';
-import {Platform, StatusBar, useColorScheme, View} from 'react-native';
+import {Alert, Platform, StatusBar, useColorScheme, View} from 'react-native';
 import {ActivityIndicator} from 'react-native';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -27,8 +27,25 @@ import MapScreen from './src/screens/MapScreen';
 import NotificationScreen from './src/screens/NotificationScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import ScheduleDetailScreen from './src/screens/ScheduleDetailScreen';
-import tourCastApi from './src/services/tourCastApi';
+import api from './src/services/api';
+import tourCastApi, {saveSchedule} from './src/services/tourCastApi';
+import {
+  TRAVEL_PLATFORM_BASE_URL,
+  TOUR_CAST_BASE_URL,
+} from './src/config/endpoints';
 import type {ScheduleItem} from './src/types/schedule';
+
+const CHAT_MESSAGES_KEY = '@plango_chat_messages';
+const SAVED_SCHEDULES_KEY = '@plango_saved_schedules';
+
+// ── 채팅 메시지 타입 ──────────────────────────────────────────────────────
+interface ChatMessage {
+  id: string;
+  text: string;
+  role: 'user' | 'assistant' | 'error';
+  schedule?: ScheduleItem[] | null;
+  hasSchedule?: boolean;
+}
 
 // ── 네비게이션 타입 ────────────────────────────────────────────────────────
 type AuthScreen =
@@ -39,6 +56,16 @@ type AuthScreen =
   | 'apiTest';
 
 type UnauthScreen = 'login' | 'register';
+
+// ── 서버 워밍업 (fly.dev 무료 플랜: 비활성 시 sleep → 첫 요청 지연 방지) ──
+async function warmupServers() {
+  const targets = [TRAVEL_PLATFORM_BASE_URL, TOUR_CAST_BASE_URL];
+  await Promise.allSettled(
+    targets.map(url =>
+      fetch(url, {method: 'GET'}).catch(() => {}),
+    ),
+  );
+}
 
 // ── FCM 토큰을 tour-cast 서버에 등록 ──────────────────────────────────────
 async function uploadDeviceToken(fcmToken: string, authToken: string) {
@@ -56,43 +83,138 @@ async function uploadDeviceToken(fcmToken: string, authToken: string) {
 
 // ── FCM 권한 + 토큰 발급 ──────────────────────────────────────────────────
 async function initFCM(): Promise<string | null> {
-  if (Platform.OS === 'ios') {
-    await messaging().registerDeviceForRemoteMessages();
-    const status = await messaging().requestPermission();
-    const granted =
-      status === messaging.AuthorizationStatus.AUTHORIZED ||
-      status === messaging.AuthorizationStatus.PROVISIONAL;
-    if (!granted) {
-      console.log('[FCM] 권한 거부');
-      return null;
+  try {
+    if (Platform.OS === 'ios') {
+      await messaging().registerDeviceForRemoteMessages();
+      const status = await messaging().requestPermission();
+      const granted =
+        status === messaging.AuthorizationStatus.AUTHORIZED ||
+        status === messaging.AuthorizationStatus.PROVISIONAL;
+      if (!granted) {
+        console.log('[FCM] 권한 거부');
+        return null;
+      }
+    } else {
+      await messaging().requestPermission();
     }
-  } else {
-    await messaging().requestPermission();
-  }
 
-  // Android 알림 채널 생성
-  if (Platform.OS === 'android') {
-    await notifee.createChannel({
-      id: 'schedule',
-      name: '일정 알림',
-      importance: AndroidImportance.HIGH,
-    });
-  }
+    // Android 알림 채널 생성
+    if (Platform.OS === 'android') {
+      await notifee.createChannel({
+        id: 'schedule',
+        name: '일정 알림',
+        importance: AndroidImportance.HIGH,
+      });
+    }
 
-  const token = await messaging().getToken();
-  console.log('[FCM] token:', token);
-  return token;
+    const token = await messaging().getToken();
+    console.log('[FCM] token:', token);
+    return token;
+  } catch (e) {
+    // iOS: aps-environment entitlement 없음 (무료 계정 or Push 미설정)
+    console.warn('[FCM] 초기화 실패 (Push 알림 미지원 환경):', e);
+    return null;
+  }
 }
 
 // ── AppContent ─────────────────────────────────────────────────────────────
 function AppContent() {
-  const {token: authToken, isLoading, login, register, logout} = useAuth();
+  const {token: authToken, user, isLoading, login, register, logout} = useAuth();
   const {addNotification, parseScheduleItem, markRead} = useNotifications();
   const insets = useSafeAreaInsets();
 
   const [unauthScreen, setUnauthScreen] = useState<UnauthScreen>('login');
   const [authScreen, setAuthScreen] = useState<AuthScreen>('chat');
   const [selectedItem, setSelectedItem] = useState<ScheduleItem | null>(null);
+  const [mapInitialSchedule, setMapInitialSchedule] = useState<ScheduleItem[] | null>(null);
+
+  // ── 채팅 영구 상태 ────────────────────────────────────────────────────
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatSavedIds, setChatSavedIds] = useState<Set<string>>(new Set());
+  const [chatInputText, setChatInputText] = useState('');
+  const [chatIsLoading, setChatIsLoading] = useState(false);
+
+  // 로그인 시 서버에서 채팅 기록 로드, 실패 시 AsyncStorage 폴백
+  useEffect(() => {
+    if (!authToken) {
+      // 로그아웃 시 채팅 초기화
+      setChatMessages([]);
+      setChatSavedIds(new Set());
+      return;
+    }
+
+    const loadHistory = async () => {
+      try {
+        const res = await api.get('/api/chat/history', {params: {limit: 50}});
+        const serverMsgs: ChatMessage[] = (res.data?.data?.messages ?? []).map(
+          (m: {id: string; role: string; text: string; schedule?: ScheduleItem[] | null}) => ({
+            id: m.id,
+            text: m.text,
+            role: m.role as ChatMessage['role'],
+            schedule: m.schedule ?? null,
+            hasSchedule: Array.isArray(m.schedule) && m.schedule.length > 0,
+          }),
+        );
+        setChatMessages(serverMsgs);
+        // 서버 기록을 AsyncStorage에도 캐싱
+        AsyncStorage.setItem(CHAT_MESSAGES_KEY, JSON.stringify(serverMsgs)).catch(() => {});
+      } catch {
+        // 서버 실패 시 로컬 캐시로 폴백
+        const raw = await AsyncStorage.getItem(CHAT_MESSAGES_KEY).catch(() => null);
+        if (raw) {
+          try { setChatMessages(JSON.parse(raw)); } catch {}
+        }
+      }
+    };
+
+    loadHistory();
+  }, [authToken]);
+
+  // 메시지 추가 + AsyncStorage 캐싱 (서버 저장은 /api/chat에서 자동 처리)
+  const handleAddMessage = useCallback((msg: ChatMessage) => {
+    setChatMessages(prev => {
+      const next = [...prev, msg];
+      AsyncStorage.setItem(CHAT_MESSAGES_KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  // 일정 저장: TourCast 서버에 저장
+  const handleSaveSchedule = useCallback(async (item: ChatMessage) => {
+    const userId = String((user as {id?: string | number} | null)?.id ?? '1');
+    try {
+      if (item.schedule?.length) {
+        const firstScheduledAt = item.schedule[0].scheduledAt;
+        const date = firstScheduledAt
+          ? firstScheduledAt.split('T')[0]
+          : new Date().toISOString().split('T')[0];
+
+        await saveSchedule({
+          userId,
+          date,
+          title: `AI 추천 일정 (${date})`,
+          sourceText: item.text,
+          items: item.schedule.map(s => ({
+            title: s.title,
+            latitude: s.latitude,
+            longitude: s.longitude,
+            time: s.time,
+            scheduledAt: s.scheduledAt,
+            category: s.category,
+            description: s.description,
+            order: s.order,
+          })),
+        });
+      }
+      setChatSavedIds(prev => new Set([...prev, item.id]));
+    } catch (e) {
+      console.warn('[Chat] 일정 저장 실패:', e);
+      Alert.alert(
+        '저장 실패',
+        '일정을 서버에 저장하지 못했습니다. 잠시 후 다시 시도해주세요.',
+      );
+    }
+  }, [user]);
 
   // 배너에 표시할 알림 (null이면 숨김)
   const [bannerNotif, setBannerNotif] = useState<StoredNotification | null>(
@@ -277,11 +399,16 @@ function AppContent() {
     if (authScreen === 'map') {
       return (
         <MapScreen
-          onGoBack={() => setAuthScreen('chat')}
+          onGoBack={() => {
+            setMapInitialSchedule(null);
+            setAuthScreen('chat');
+          }}
           onSelectItem={item => {
             setSelectedItem(item);
             setAuthScreen('scheduleDetail');
           }}
+          initialSchedule={mapInitialSchedule}
+          userId={String((user as {id?: string | number} | null)?.id ?? '1')}
         />
       );
     }
@@ -289,8 +416,20 @@ function AppContent() {
       <ChatScreen
         onLogout={logout}
         onGoMap={() => setAuthScreen('map')}
+        onGoMapWithSchedule={(schedule: ScheduleItem[] | null) => {
+          setMapInitialSchedule(schedule);
+          setAuthScreen('map');
+        }}
         onGoApiTest={() => setAuthScreen('apiTest')}
         onGoNotifications={() => setAuthScreen('notifications')}
+        messages={chatMessages}
+        onAddMessage={handleAddMessage}
+        savedIds={chatSavedIds}
+        onSaveSchedule={handleSaveSchedule}
+        isLoading={chatIsLoading}
+        onSetLoading={setChatIsLoading}
+        inputText={chatInputText}
+        onSetInputText={setChatInputText}
       />
     );
   };
@@ -324,6 +463,11 @@ function AppContent() {
 // ── App ────────────────────────────────────────────────────────────────────
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
+
+  // 앱 시작 즉시 서버 워밍업 (fly.dev sleep 해제)
+  useEffect(() => {
+    warmupServers();
+  }, []);
 
   return (
     <GestureHandlerRootView style={{flex: 1}}>

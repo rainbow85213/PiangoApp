@@ -48,6 +48,7 @@ const TEST_CASES: TestCase[] = [
           throw e;
         }),
   },
+
   {
     id: 'auth_register',
     server: 'TravelPlatform',
@@ -69,9 +70,9 @@ const TEST_CASES: TestCase[] = [
     id: 'chat',
     server: 'TravelPlatform',
     method: 'POST',
-    endpoint: '/chat',
+    endpoint: '/api/chat',
     description: '채팅 — AI 응답',
-    run: () => api.post('/chat', {message: '도쿄 여행 1일 코스 추천해줘'}),
+    run: () => api.post('/api/chat', {message: '도쿄 여행 1일 코스 추천해줘'}),
   },
 
   // ── TourCast ────────────────────────────────────────────────

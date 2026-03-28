@@ -2,29 +2,62 @@ import BottomSheet, {BottomSheetFlatList} from '@gorhom/bottom-sheet';
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import MapView, {Polyline, UrlTile} from 'react-native-maps';
+import MapView, {Heatmap, Polyline, UrlTile, PROVIDER_GOOGLE} from 'react-native-maps';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import ScheduleMarker from '../components/ScheduleMarker';
-import {getScheduleForMap, getScheduleRoute} from '../services/tourCastApi';
+import {getHeatmap, getScheduleForMap, getScheduleRoute} from '../services/tourCastApi';
 import type {
   CategoryFilter,
+  HeatmapPoint,
   RouteResponse,
   ScheduleItem,
   TimeFilter,
 } from '../types/schedule';
 
-const INITIAL_REGION = {
+const DEFAULT_REGION = {
   latitude: 35.6895,
   longitude: 139.6917,
   latitudeDelta: 0.12,
   longitudeDelta: 0.08,
 };
+
+function getInitialRegion(schedule?: ScheduleItem[] | null) {
+  const first = schedule?.[0];
+  if (!first) {
+    return DEFAULT_REGION;
+  }
+  return {
+    latitude: first.latitude,
+    longitude: first.longitude,
+    latitudeDelta: 0.12,
+    longitudeDelta: 0.08,
+  };
+}
+
+// 히트맵 그라데이션: 초록(낮음) → 노랑(중간) → 빨강(높음)
+const HEATMAP_GRADIENT = {
+  colors: ['#00e676', '#ffeb3b', '#ff1744'],
+  startPoints: [0.1, 0.5, 1.0],
+  colorMapSize: 256,
+};
+
+// API 미구현 시 폴백 더미 히트맵
+const DUMMY_HEATMAP: HeatmapPoint[] = [
+  {lat: 35.6851, lng: 139.7100, weight: 8},
+  {lat: 35.6938, lng: 139.7034, weight: 12},
+  {lat: 35.7148, lng: 139.7967, weight: 15},
+  {lat: 35.6595, lng: 139.7004, weight: 5},
+  {lat: 35.6564, lng: 139.7453, weight: 3},
+  {lat: 35.7020, lng: 139.7750, weight: 10},
+  {lat: 35.6780, lng: 139.7195, weight: 7},
+];
 
 const STATUS_COLORS = {
   completed: '#22c55e',
@@ -62,18 +95,24 @@ const offsetDate = (dateStr: string, days: number) => {
 interface Props {
   onGoBack: () => void;
   onSelectItem?: (item: ScheduleItem) => void;
+  initialSchedule?: ScheduleItem[] | null;
+  userId?: string;
 }
 
-const MapScreen: React.FC<Props> = ({onGoBack, onSelectItem}) => {
+const MapScreen: React.FC<Props> = ({onGoBack, onSelectItem, initialSchedule, userId = '1'}) => {
   const insets = useSafeAreaInsets();
   const bottomSheetRef = useRef<BottomSheet>(null);
+  const mapRef = useRef<MapView>(null);
   const snapPoints = useMemo(() => ['25%', '50%'], []);
 
   const [selectedDate, setSelectedDate] = useState(getToday());
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
-  const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
+  const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>(initialSchedule ?? []);
   const [routeData, setRouteData] = useState<RouteResponse | null>(null);
+  const [heatmapPoints, setHeatmapPoints] = useState<HeatmapPoint[]>([]);
+  const [showHeatmap, setShowHeatmap] = useState(false);
+  const [heatmapLoading, setHeatmapLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -87,32 +126,89 @@ const MapScreen: React.FC<Props> = ({onGoBack, onSelectItem}) => {
   ];
 
   const fetchSchedule = useCallback(async () => {
+    // 외부에서 일정을 받은 경우 fetch 생략
+    if (initialSchedule != null) {
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {
-      const data = await getScheduleForMap({userId: '1', date: selectedDate});
-      setScheduleItems(data?.items ?? data ?? []);
+      const data = await getScheduleForMap({userId, date: selectedDate});
+      // 실제 응답: { stops: [{lat, lng, title, scheduledAt}] } 또는 { items: [...] }
+      const rawItems = data?.items ?? data?.stops;
+      if (Array.isArray(rawItems) && rawItems.length > 0) {
+        const mapped: ScheduleItem[] = rawItems.map(
+          (s: {lat?: number; lng?: number; latitude?: number; longitude?: number; title?: string; scheduledAt?: string; category?: string; status?: string; time?: string; order?: number; description?: string; id?: string}, idx: number) => ({
+            id: s.id ?? `stop-${idx}`,
+            title: s.title ?? '',
+            latitude: s.lat ?? s.latitude ?? 0,
+            longitude: s.lng ?? s.longitude ?? 0,
+            status: (s.status as ScheduleItem['status']) ?? 'pending',
+            time: s.time ?? s.scheduledAt?.split('T')[1]?.substring(0, 5) ?? '00:00',
+            scheduledAt: s.scheduledAt,
+            category: (s.category as ScheduleItem['category']) ?? 'attraction',
+            description: s.description,
+            order: s.order ?? idx + 1,
+          }),
+        );
+        setScheduleItems(mapped);
+        // 첫 번째 일정 위치로 지도 이동
+        const first = mapped[0];
+        if (first) {
+          mapRef.current?.animateToRegion(
+            {
+              latitude: first.latitude,
+              longitude: first.longitude,
+              latitudeDelta: 0.12,
+              longitudeDelta: 0.08,
+            },
+            800,
+          );
+        }
+      } else {
+        setScheduleItems([]);
+      }
     } catch {
       // 백엔드 미구현 상태: 더미 데이터로 대체
       setScheduleItems(DUMMY_ITEMS);
     } finally {
       setIsLoading(false);
     }
-  }, [selectedDate]);
+  }, [selectedDate, initialSchedule]);
 
   const fetchRoute = useCallback(async () => {
     try {
-      const data = await getScheduleRoute({userId: '1', date: selectedDate});
+      const data = await getScheduleRoute({userId, date: selectedDate});
       setRouteData(data);
     } catch {
       setRouteData(null);
     }
   }, [selectedDate]);
 
+  // 히트맵은 날짜와 무관하게 userId 기준 누적 데이터
+  const fetchHeatmap = useCallback(async () => {
+    setHeatmapLoading(true);
+    try {
+      const data = await getHeatmap({userId});
+      setHeatmapPoints(data?.length ? data : DUMMY_HEATMAP);
+    } catch {
+      setHeatmapPoints(DUMMY_HEATMAP);
+    } finally {
+      setHeatmapLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchSchedule();
     fetchRoute();
   }, [fetchSchedule, fetchRoute]);
+
+  // 히트맵 토글 시 최초 1회 fetch
+  useEffect(() => {
+    if (showHeatmap && heatmapPoints.length === 0) {
+      fetchHeatmap();
+    }
+  }, [showHeatmap, heatmapPoints.length, fetchHeatmap]);
 
   const filteredItems = useMemo(() => {
     return scheduleItems.filter(item => {
@@ -188,7 +284,21 @@ const MapScreen: React.FC<Props> = ({onGoBack, onSelectItem}) => {
           <Text style={styles.backButtonText}>←</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>여행 지도</Text>
-        <View style={styles.headerRight} />
+        <TouchableOpacity
+          style={[
+            styles.heatmapToggle,
+            showHeatmap && styles.heatmapToggleActive,
+          ]}
+          onPress={() => setShowHeatmap(v => !v)}
+          activeOpacity={0.75}>
+          {heatmapLoading ? (
+            <ActivityIndicator size="small" color={showHeatmap ? '#fff' : '#6366f1'} />
+          ) : (
+            <Text style={[styles.heatmapToggleText, showHeatmap && styles.heatmapToggleTextActive]}>
+              🌡 열지도
+            </Text>
+          )}
+        </TouchableOpacity>
       </View>
 
       {/* 필터 바 */}
@@ -253,14 +363,32 @@ const MapScreen: React.FC<Props> = ({onGoBack, onSelectItem}) => {
 
       {/* 지도 */}
       <MapView
+        ref={mapRef}
         style={styles.map}
-        initialRegion={INITIAL_REGION}
-        mapType="none">
-        <UrlTile
-          urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-          maximumZ={19}
-          flipY={false}
-        />
+        initialRegion={getInitialRegion(initialSchedule)}
+        mapType="standard"
+        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}>
+        {/* UrlTile: Android 전용 (iOS는 Apple Maps 기본 타일 사용) */}
+        {Platform.OS === 'android' && (
+          <UrlTile
+            urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+            maximumZ={19}
+            flipY={false}
+          />
+        )}
+        {/* 히트맵: Android 전용 (iOS Heatmap은 Google Maps provider 필요) */}
+        {Platform.OS === 'android' && showHeatmap && heatmapPoints.length > 0 && (
+          <Heatmap
+            points={heatmapPoints.map(p => ({
+              latitude: p.lat,
+              longitude: p.lng,
+              weight: p.weight,
+            }))}
+            radius={40}
+            opacity={0.75}
+            gradient={HEATMAP_GRADIENT}
+          />
+        )}
         {filteredItems.map(item => (
           <ScheduleMarker key={item.id} item={item} />
         ))}
@@ -274,8 +402,17 @@ const MapScreen: React.FC<Props> = ({onGoBack, onSelectItem}) => {
         )}
       </MapView>
 
+      {/* 히트맵 범례 */}
+      {showHeatmap && (
+        <View style={styles.heatmapLegend}>
+          <Text style={styles.heatmapLegendLabel}>낮음</Text>
+          <View style={styles.heatmapGradientBar} />
+          <Text style={styles.heatmapLegendLabel}>높음</Text>
+        </View>
+      )}
+
       {/* 경로 정보 뱃지 */}
-      {routeData && (
+      {routeData?.totalDistance != null && (
         <View style={styles.routeBadge}>
           <Text style={styles.routeBadgeText}>
             📍 {routeData.totalDistance.toFixed(1)}km
@@ -345,7 +482,47 @@ const styles = StyleSheet.create({
   backButton: {width: 40, alignItems: 'flex-start'},
   backButtonText: {fontSize: 24, color: '#6366f1'},
   headerTitle: {flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '700', color: '#1f2937'},
-  headerRight: {width: 40},
+  heatmapToggle: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#6366f1',
+    backgroundColor: '#fff',
+  },
+  heatmapToggleActive: {
+    backgroundColor: '#6366f1',
+    borderColor: '#6366f1',
+  },
+  heatmapToggleText: {fontSize: 11, fontWeight: '700', color: '#6366f1'},
+  heatmapToggleTextActive: {color: '#fff'},
+  heatmapLegend: {
+    position: 'absolute',
+    bottom: 8,
+    left: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    gap: 6,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  heatmapLegendLabel: {fontSize: 10, fontWeight: '600', color: '#6b7280'},
+  heatmapGradientBar: {
+    width: 80,
+    height: 8,
+    borderRadius: 4,
+    // LinearGradient 미사용 → CSS gradient 근사치 색으로 표현
+    backgroundColor: '#ffeb3b',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
   filterBar: {
     backgroundColor: '#fff',
     paddingVertical: 8,

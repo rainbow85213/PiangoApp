@@ -1,8 +1,9 @@
-import React, {useCallback, useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useRef} from 'react';
 import {
   ActivityIndicator,
   FlatList,
   Keyboard,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -13,14 +14,35 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import api from '../services/api';
 import {useNotifications} from '../contexts/NotificationContext';
 
-const ChatScreen = ({onLogout, onGoMap, onGoApiTest, onGoNotifications}) => {
+// 여행 일정 포함 여부 감지 (텍스트 기반 휴리스틱)
+function detectsItinerary(text) {
+  const keywords = ['일차', '오전', '오후', '저녁', 'Day ', '관광', '식당', '숙박', '교통'];
+  const matched = keywords.filter(kw => text.includes(kw));
+  return matched.length >= 2 && text.length > 80;
+}
+
+const ChatScreen = ({
+  onLogout,
+  onGoMap,
+  onGoMapWithSchedule,
+  onGoApiTest,
+  onGoNotifications,
+  // 채팅 기록 (App.tsx에서 관리)
+  messages,
+  onAddMessage,
+  // 저장된 일정 ID Set (App.tsx에서 관리)
+  savedIds,
+  onSaveSchedule,
+  // 로딩 상태
+  isLoading,
+  onSetLoading,
+  inputText,
+  onSetInputText,
+}) => {
   const {unreadCount} = useNotifications();
-  const [messages, setMessages] = useState([]);
-  const [inputText, setInputText] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
   const flatListRef = useRef(null);
   const insets = useSafeAreaInsets();
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [keyboardHeight, setKeyboardHeight] = React.useState(0);
 
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', e => {
@@ -47,39 +69,55 @@ const ChatScreen = ({onLogout, onGoMap, onGoApiTest, onGoNotifications}) => {
       role: 'user',
     };
 
-    setMessages(prev => [...prev, userMessage]);
-    setInputText('');
-    setIsLoading(true);
+    onAddMessage(userMessage);
+    onSetInputText('');
+    onSetLoading(true);
 
     try {
-      const response = await api.post('/chat', {message: text});
+      const response = await api.post('/api/chat', {message: text});
 
-      // Laravel ApiResponse 구조: { success, message, data: { reply } }
-      const replyText =
-        response.data?.data?.reply ??
-        '응답을 받았습니다.';
+      // Laravel ApiResponse 구조: { success, message, data: { reply, schedule? } }
+      const resData = response.data?.data ?? {};
+      const replyText = resData.reply ?? '응답을 받았습니다.';
+      const scheduleData = Array.isArray(resData.schedule) ? resData.schedule : null;
+      const hasSchedule = scheduleData !== null || detectsItinerary(replyText);
 
-      const botMessage = {
+      onAddMessage({
         id: `bot-${Date.now()}`,
         text: replyText,
         role: 'assistant',
-      };
-      setMessages(prev => [...prev, botMessage]);
+        schedule: scheduleData,
+        hasSchedule,
+      });
     } catch (error) {
-      const errorMessage = {
+      const status = error?.response?.status;
+      const serverMsg = error?.response?.data?.message ?? error?.response?.data?.error;
+      const detail = status
+        ? `[${status}] ${serverMsg ?? error?.message ?? '알 수 없는 오류'}`
+        : (error?.message ?? '네트워크 연결을 확인해주세요.');
+      onAddMessage({
         id: `error-${Date.now()}`,
-        text: '서버 연결에 실패했습니다. IP 주소와 서버 상태를 확인해주세요.',
+        text: `서버 오류: ${detail}`,
         role: 'error',
-      };
-      setMessages(prev => [...prev, errorMessage]);
+      });
     } finally {
-      setIsLoading(false);
+      onSetLoading(false);
     }
-  }, [inputText, isLoading]);
+  }, [inputText, isLoading, onAddMessage, onSetInputText, onSetLoading]);
+
+  const handleGoMapWithSchedule = useCallback((item) => {
+    const navigate = onGoMapWithSchedule ?? onGoMap;
+    navigate(item.schedule ?? null);
+  }, [onGoMapWithSchedule, onGoMap]);
+
+  const scrollToBottom = useCallback(() => {
+    flatListRef.current?.scrollToEnd({animated: true});
+  }, []);
 
   const renderMessage = useCallback(({item}) => {
     const isUser = item.role === 'user';
     const isError = item.role === 'error';
+    const isSaved = savedIds.has(item.id);
 
     return (
       <View
@@ -91,33 +129,51 @@ const ChatScreen = ({onLogout, onGoMap, onGoApiTest, onGoNotifications}) => {
           </View>
         )}
 
-        {/* 말풍선 */}
-        <View
-          className={`max-w-[75%] px-4 py-3 rounded-2xl ${
-            isUser
-              ? 'bg-indigo-500 rounded-tr-sm'
-              : isError
-                ? 'bg-red-100 rounded-tl-sm'
-                : 'bg-white rounded-tl-sm shadow-sm'
-          }`}>
-          <Text
-            className={`text-sm leading-5 ${
+        <View className="max-w-[75%]">
+          {/* 말풍선 */}
+          <View
+            className={`px-4 py-3 rounded-2xl ${
               isUser
-                ? 'text-white'
+                ? 'bg-indigo-500 rounded-tr-sm'
                 : isError
-                  ? 'text-red-600'
-                  : 'text-gray-800'
+                  ? 'bg-red-100 rounded-tl-sm'
+                  : 'bg-white rounded-tl-sm shadow-sm'
             }`}>
-            {item.text}
-          </Text>
+            <Text
+              className={`text-sm leading-5 ${
+                isUser
+                  ? 'text-white'
+                  : isError
+                    ? 'text-red-600'
+                    : 'text-gray-800'
+              }`}>
+              {item.text}
+            </Text>
+          </View>
+
+          {/* 일정 액션 버튼 */}
+          {!isUser && !isError && item.hasSchedule && (
+            <View style={styles.actionRow}>
+              <TouchableOpacity
+                style={[styles.actionBtn, isSaved && styles.actionBtnSaved]}
+                onPress={() => !isSaved && onSaveSchedule(item)}
+                activeOpacity={isSaved ? 1 : 0.7}>
+                <Text style={[styles.actionBtnText, isSaved && styles.actionBtnTextSaved]}>
+                  {isSaved ? '✓ 저장됨' : '💾 일정 저장'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={() => handleGoMapWithSchedule(item)}
+                activeOpacity={0.7}>
+                <Text style={styles.actionBtnText}>🗺 지도로 보기</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </View>
     );
-  }, []);
-
-  const scrollToBottom = useCallback(() => {
-    flatListRef.current?.scrollToEnd({animated: true});
-  }, []);
+  }, [savedIds, onSaveSchedule, handleGoMapWithSchedule]);
 
   return (
     <View
@@ -201,7 +257,7 @@ const ChatScreen = ({onLogout, onGoMap, onGoApiTest, onGoNotifications}) => {
           placeholder="메시지를 입력하세요..."
           placeholderTextColor="#9ca3af"
           value={inputText}
-          onChangeText={setInputText}
+          onChangeText={onSetInputText}
           multiline
           returnKeyType="send"
           blurOnSubmit={false}
@@ -228,5 +284,34 @@ const ChatScreen = ({onLogout, onGoMap, onGoApiTest, onGoNotifications}) => {
     </View>
   );
 };
+
+const styles = StyleSheet.create({
+  actionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 6,
+  },
+  actionBtn: {
+    flex: 1,
+    backgroundColor: '#eef2ff',
+    borderRadius: 10,
+    paddingVertical: 7,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#c7d2fe',
+  },
+  actionBtnSaved: {
+    backgroundColor: '#f0fdf4',
+    borderColor: '#86efac',
+  },
+  actionBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6366f1',
+  },
+  actionBtnTextSaved: {
+    color: '#16a34a',
+  },
+});
 
 export default ChatScreen;

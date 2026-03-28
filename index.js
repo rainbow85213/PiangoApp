@@ -2,6 +2,8 @@
  * @format
  */
 
+import 'react-native-gesture-handler';
+import 'react-native-reanimated';
 import {AppRegistry} from 'react-native';
 import App from './App';
 import {name as appName} from './app.json';
@@ -23,7 +25,7 @@ messaging().setBackgroundMessageHandler(async remoteMessage => {
   await notifee.displayNotification({
     title: notification?.title ?? '새 알림',
     body: notification?.body ?? '',
-    data: data as Record<string, string>,
+    data: data,
     android: {channelId, pressAction: {id: 'default'}},
     ios: {sound: 'default'},
   });

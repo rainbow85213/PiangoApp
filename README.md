@@ -1,7 +1,21 @@
 # PlangoApp
 
 AI 기반 여행 플래너 React Native 앱입니다.
-사용자가 채팅으로 여행 관련 질문을 하면, Laravel 백엔드를 통해 OpenAI GPT-4o-mini가 응답합니다.
+채팅으로 여행 일정을 생성하고, 지도에서 확인·관리할 수 있습니다.
+
+---
+
+## 아키텍처
+
+```
+TravelPlatform (https://travel-platform.fly.dev)
+│  REST API + Laravel Sanctum Bearer Token
+▼
+PlangoApp  ← 이 앱 (React Native CLI)
+│  REST API (직접 호출 — 추후 TravelPlatform 프록시로 전환 예정)
+▼
+TourCast (https://tour-cast.fly.dev)
+```
 
 ---
 
@@ -9,14 +23,13 @@ AI 기반 여행 플래너 React Native 앱입니다.
 
 | 분류 | 기술 |
 |------|------|
-| 모바일 | React Native 0.84 (CLI), TypeScript |
+| 모바일 | React Native 0.84.1 (CLI), TypeScript 5.x |
 | 스타일링 | NativeWind v4 (Tailwind CSS) |
-| HTTP 클라이언트 | Axios |
-| 인증 | Laravel Sanctum (Bearer Token) |
+| HTTP 클라이언트 | axios ^1.13.6 |
+| 인증 | Laravel Sanctum (Bearer Token, 30일 유효) |
 | 로컬 저장소 | AsyncStorage |
-| 키보드 UX | react-native-keyboard-aware-scroll-view |
-| 백엔드 | Laravel (Sail, Docker) |
-| AI | OpenAI GPT-4o-mini |
+| 지도 | react-native-maps |
+| Push 알림 | @notifee/react-native + @react-native-firebase |
 | 패키지 매니저 | npm |
 
 ---
@@ -26,20 +39,32 @@ AI 기반 여행 플래너 React Native 앱입니다.
 ```
 PlangoApp/
 ├── src/
-│   ├── components/         # 공통 컴포넌트
-│   ├── screens/
-│   │   ├── ChatScreen.js   # 채팅 화면
-│   │   ├── LoginScreen.js  # 로그인 화면
-│   │   └── RegisterScreen.js # 회원가입 화면
+│   ├── config/
+│   │   └── endpoints.ts        # API URL 상수 (URL 변경 시 이 파일만 수정)
+│   ├── components/
+│   │   ├── NotificationBanner.tsx
+│   │   └── ScheduleMarker.tsx
+│   ├── contexts/
+│   │   └── NotificationContext.tsx
 │   ├── hooks/
-│   │   └── useAuth.js      # 인증 상태 관리 훅
-│   └── services/
-│       └── api.js          # Axios 인스턴스 (API 설정)
-├── App.tsx                 # 앱 진입점 (인증 상태에 따른 화면 전환)
-├── global.css              # Tailwind 디렉티브
-├── tailwind.config.js      # NativeWind 설정
-├── babel.config.js         # Babel 설정
-└── metro.config.js         # Metro 번들러 설정
+│   │   └── useAuth.ts          # 인증 상태 관리 (로그인/로그아웃/401 자동 처리)
+│   ├── screens/
+│   │   ├── ChatScreen.js       # AI 챗봇 채팅 (메인)
+│   │   ├── LoginScreen.js
+│   │   ├── RegisterScreen.js
+│   │   ├── MapScreen.tsx       # 여행 지도 (마커·경로·히트맵)
+│   │   ├── ScheduleDetailScreen.tsx
+│   │   ├── NotificationScreen.tsx
+│   │   └── ApiTestScreen.tsx   # 개발용
+│   ├── services/
+│   │   ├── api.js              # TravelPlatform axios 인스턴스
+│   │   └── tourCastApi.ts      # TourCast axios 인스턴스
+│   └── types/
+│       └── schedule.ts
+├── App.tsx                     # 루트 (전역 상태·네비게이션·FCM 초기화)
+├── index.js                    # 엔트리포인트
+├── global.css                  # NativeWind 엔트리포인트
+└── ...
 ```
 
 ---
@@ -49,143 +74,97 @@ PlangoApp/
 ### 요구사항
 
 - Node.js >= 22.11.0
-- JDK 17 (Temurin 권장)
-- Android SDK (NDK 27.1.12297006)
-- Laravel 백엔드 서버 실행 중
+- iOS: Xcode + CocoaPods
+- Android: JDK 17, Android SDK (minSdk 24)
 
-### 설치
+### 설치 및 실행
 
 ```bash
+# 의존성 설치
 npm install
-```
 
-### API 서버 주소 설정
+# iOS CocoaPods
+cd ios && pod install && cd ..
 
-`src/services/api.js`에서 PC의 내부 IP를 설정합니다.
+# Metro 번들러
+npm start
 
-```js
-const API_BASE_URL = 'http://<내_PC_IP주소>';
-```
+# iOS 실행
+npm run ios
 
-> **내부 IP 확인:** macOS/Linux → `ifconfig | grep "inet "` / Windows → `ipconfig`
-> 모바일 기기와 PC가 **동일한 Wi-Fi**에 연결되어 있어야 합니다.
-
-### 실행
-
-**Metro 서버 시작**
-
-```bash
-npx react-native start
-```
-
-**Android 빌드 및 실행**
-
-```bash
-npx react-native run-android
+# Android 실행
+npm run android
 ```
 
 ---
 
 ## 주요 기능
 
-### 인증 (`LoginScreen.js`, `RegisterScreen.js`, `useAuth.js`)
+### 인증
 
-- 이메일 / 비밀번호 로그인 및 회원가입
-- Laravel Sanctum Bearer Token 발급 및 저장 (AsyncStorage)
-- 앱 재시작 시 토큰 자동 복원 (자동 로그인)
-- 로그아웃 시 서버 토큰 폐기 및 로컬 데이터 삭제
-- 서버 유효성 검사 에러 필드별 표시
+- 이메일/비밀번호 로그인·회원가입 (Laravel Sanctum Bearer Token)
+- 앱 재시작 시 AsyncStorage에서 토큰 자동 복원
+- **토큰 만료(401) 시 axios 인터셉터가 자동으로 로그아웃 처리** → 로그인 화면으로 전환
 
-### 채팅 화면 (`ChatScreen.js`)
+### 채팅 (AI 일정 생성)
 
-- 사용자 메시지 입력 및 전송
-- AI 응답 말풍선 표시 (좌/우 구분)
-- 응답 대기 중 로딩 인디케이터
-- Android 하단 내비게이션 바 대응 (`useSafeAreaInsets`)
-- 키보드 표시 시 입력창 자동 이동 (Keyboard 이벤트 기반)
+- AI 챗봇과 대화로 여행 일정 생성
+- 생성된 일정을 TourCast 서버에 저장, 지도 화면으로 연결
+- 서버 저장 실패 시 사용자에게 Alert로 명확히 안내
 
-### 키보드 UX
+### 지도
 
-- 로그인/회원가입: `KeyboardAwareScrollView`로 화면 자동 스크롤
-- 채팅: `Keyboard.addListener`로 키보드 높이 감지 후 `marginBottom` 적용
-- RN 0.84 Android edge-to-edge 환경에서 올바르게 동작
+- 일정 마커·이동 경로·방문 히트맵 표시
+- `@gorhom/bottom-sheet` 기반 일정 목록 패널
 
-### API 연동 (`api.js`)
+### Push 알림 (FCM)
 
-- `POST /api/auth/register` — 회원가입 및 토큰 수신
-- `POST /api/auth/login` — 로그인 및 토큰 수신
-- `POST /api/auth/logout` — 서버 토큰 폐기
-- `POST /api/chat` — 메시지 전송 및 AI 응답 수신
-- 요청 타임아웃: 30초
-- Laravel 응답 구조: `{ success, message, data: { ... } }`
+- Firebase Cloud Messaging 연동
+- 앱 포그라운드·백그라운드·종료 상태 모두 지원
+- 알림 탭 시 해당 일정 상세 화면으로 이동
 
 ---
 
-## Laravel 백엔드 연동
+## API 엔드포인트 설정
 
-백엔드는 Laravel (TravelPlatform) 프로젝트를 사용합니다.
+URL은 `src/config/endpoints.ts` 한 곳에서 관리합니다.
 
-### 서버 실행 (Laravel Sail)
-
-```bash
-./vendor/bin/sail up -d
+```ts
+export const TRAVEL_PLATFORM_BASE_URL = 'https://travel-platform.fly.dev';
+export const TOUR_CAST_BASE_URL       = 'https://tour-cast.fly.dev';
 ```
 
-### 인증 API
-
-```
-POST /api/auth/register   # 회원가입
-POST /api/auth/login      # 로그인
-POST /api/auth/logout     # 로그아웃 (Bearer Token 필요)
-```
-
-### 채팅 API
-
-```
-POST /api/chat
-Authorization: Bearer {token}
-Content-Type: application/json
-
-{ "message": "제주도 2박 3일 일정 짜줘" }
-```
-
-```json
-{
-  "success": true,
-  "message": "응답 성공",
-  "data": {
-    "reply": "안녕하세요! 제주도 여행 일정을 도와드릴게요. ..."
-  }
-}
-```
+URL을 변경해야 할 경우 이 파일만 수정하면 `api.js`, `tourCastApi.ts`, `App.tsx`에 모두 반영됩니다.
 
 ---
 
-## 환경 설정 참고
+## 환경 파일
 
-### NativeWind v4 설정
+gitignore 처리된 민감 정보:
 
-`babel.config.js`
-
-```js
-module.exports = {
-  presets: ['module:@react-native/babel-preset', 'nativewind/babel'],
-};
+```
+ios/GoogleService-Info.plist   ← Firebase iOS 설정
+google-services.json           ← Firebase Android 설정
+.env, .env.local
 ```
 
-`metro.config.js`
+`.env.example`에서 필요한 환경변수 목록을 확인하세요.
 
-```js
-const { withNativeWind } = require('nativewind/metro');
-module.exports = withNativeWind(mergeConfig(getDefaultConfig(__dirname), config), {
-  input: './global.css',
-});
-```
+---
 
-### Android 환경 변수 (`~/.zshrc`)
+## 개선 이력
 
-```bash
-export JAVA_HOME=$(/usr/libexec/java_home -v 17)
-export ANDROID_HOME=$HOME/Library/Android/sdk
-export PATH=$PATH:$ANDROID_HOME/platform-tools
-```
+### 2026-03-29
+
+| 항목 | 내용 |
+|------|------|
+| 401 인터셉터 구현 | 토큰 만료 시 자동 로그아웃. `setUnauthorizedHandler` 콜백 패턴으로 axios ↔ React 훅 연결 |
+| URL 상수 분리 | `src/config/endpoints.ts` 신설. `api.js`·`tourCastApi.ts`·`App.tsx`의 URL 하드코딩 제거 |
+| `useAuth` TS 마이그레이션 | `useAuth.js` → `useAuth.ts`. `User`·`UseAuthReturn` 인터페이스 추가 |
+| 일정 저장 실패 처리 | API 실패 시 로컬 폴백 제거, `Alert.alert`로 사용자에게 명확히 안내 |
+
+---
+
+## 개발 가이드
+
+자세한 아키텍처·인증 흐름·API 스펙·커밋 컨벤션·Known Issues는 **`CLAUDE.md`** 를 참조하세요.
