@@ -11,15 +11,65 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
+// @ts-ignore — api.js is a plain JS module without type declarations
 import api from '../services/api';
 import {useNotifications} from '../contexts/NotificationContext';
+import type {ScheduleItem} from '../types/schedule';
 
-// 여행 일정 포함 여부 감지 (텍스트 기반 휴리스틱)
-function detectsItinerary(text) {
+// ── 타입 정의 ────────────────────────────────────────────────────────────────
+
+export interface ChatMessage {
+  id: string;
+  text: string;
+  role: 'user' | 'assistant' | 'error';
+  schedule?: ScheduleItem[] | null;
+  hasSchedule?: boolean;
+}
+
+interface ChatApiResponseData {
+  reply?: string;
+  schedule?: ScheduleItem[] | null;
+}
+
+interface AxiosLikeError {
+  response?: {
+    status?: number;
+    data?: {
+      message?: string;
+      error?: string;
+    };
+  };
+  message?: string;
+}
+
+interface ChatScreenProps {
+  onLogout: () => void;
+  onGoMap: () => void;
+  onGoMapWithSchedule?: (schedule: ScheduleItem[] | null) => void;
+  onGoApiTest?: () => void;
+  onGoNotifications?: () => void;
+  // 채팅 기록 (App.tsx에서 관리)
+  messages: ChatMessage[];
+  onAddMessage: (msg: ChatMessage) => void;
+  // 저장된 일정 ID Set (App.tsx에서 관리)
+  savedIds: Set<string>;
+  onSaveSchedule: (item: ChatMessage) => void;
+  // 로딩 상태
+  isLoading: boolean;
+  onSetLoading: (loading: boolean) => void;
+  inputText: string;
+  onSetInputText: (text: string) => void;
+}
+
+// ── 여행 일정 포함 여부 감지 (텍스트 기반 휴리스틱) ─────────────────────────
+
+function detectsItinerary(text: string): boolean {
   const keywords = ['일차', '오전', '오후', '저녁', 'Day ', '관광', '식당', '숙박', '교통'];
   const matched = keywords.filter(kw => text.includes(kw));
   return matched.length >= 2 && text.length > 80;
 }
+
+// ── 컴포넌트 ─────────────────────────────────────────────────────────────────
 
 const ChatScreen = ({
   onLogout,
@@ -27,20 +77,17 @@ const ChatScreen = ({
   onGoMapWithSchedule,
   onGoApiTest,
   onGoNotifications,
-  // 채팅 기록 (App.tsx에서 관리)
   messages,
   onAddMessage,
-  // 저장된 일정 ID Set (App.tsx에서 관리)
   savedIds,
   onSaveSchedule,
-  // 로딩 상태
   isLoading,
   onSetLoading,
   inputText,
   onSetInputText,
-}) => {
+}: ChatScreenProps) => {
   const {unreadCount} = useNotifications();
-  const flatListRef = useRef(null);
+  const flatListRef = useRef<FlatList<ChatMessage>>(null);
   const insets = useSafeAreaInsets();
   const [keyboardHeight, setKeyboardHeight] = React.useState(0);
 
@@ -63,7 +110,7 @@ const ChatScreen = ({
       return;
     }
 
-    const userMessage = {
+    const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       text,
       role: 'user',
@@ -77,7 +124,7 @@ const ChatScreen = ({
       const response = await api.post('/api/chat', {message: text});
 
       // Laravel ApiResponse 구조: { success, message, data: { reply, schedule? } }
-      const resData = response.data?.data ?? {};
+      const resData: ChatApiResponseData = response.data?.data ?? {};
       const replyText = resData.reply ?? '응답을 받았습니다.';
       const scheduleData = Array.isArray(resData.schedule) ? resData.schedule : null;
       const hasSchedule = scheduleData !== null || detectsItinerary(replyText);
@@ -90,11 +137,12 @@ const ChatScreen = ({
         hasSchedule,
       });
     } catch (error) {
-      const status = error?.response?.status;
-      const serverMsg = error?.response?.data?.message ?? error?.response?.data?.error;
+      const err = error as AxiosLikeError;
+      const status = err?.response?.status;
+      const serverMsg = err?.response?.data?.message ?? err?.response?.data?.error;
       const detail = status
-        ? `[${status}] ${serverMsg ?? error?.message ?? '알 수 없는 오류'}`
-        : (error?.message ?? '네트워크 연결을 확인해주세요.');
+        ? `[${status}] ${serverMsg ?? err?.message ?? '알 수 없는 오류'}`
+        : (err?.message ?? '네트워크 연결을 확인해주세요.');
       onAddMessage({
         id: `error-${Date.now()}`,
         text: `서버 오류: ${detail}`,
@@ -105,7 +153,7 @@ const ChatScreen = ({
     }
   }, [inputText, isLoading, onAddMessage, onSetInputText, onSetLoading]);
 
-  const handleGoMapWithSchedule = useCallback((item) => {
+  const handleGoMapWithSchedule = useCallback((item: ChatMessage) => {
     const navigate = onGoMapWithSchedule ?? onGoMap;
     navigate(item.schedule ?? null);
   }, [onGoMapWithSchedule, onGoMap]);
@@ -114,7 +162,7 @@ const ChatScreen = ({
     flatListRef.current?.scrollToEnd({animated: true});
   }, []);
 
-  const renderMessage = useCallback(({item}) => {
+  const renderMessage = useCallback(({item}: {item: ChatMessage}) => {
     const isUser = item.role === 'user';
     const isError = item.role === 'error';
     const isSaved = savedIds.has(item.id);

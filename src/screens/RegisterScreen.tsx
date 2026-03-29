@@ -9,17 +9,49 @@ import {
 import {KeyboardAwareScrollView} from 'react-native-keyboard-aware-scroll-view';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 
-const RegisterScreen = ({onRegister, onGoLogin}) => {
+interface RegisterScreenProps {
+  onRegister: (
+    name: string,
+    email: string,
+    password: string,
+    passwordConfirm: string,
+  ) => Promise<void>;
+  onGoLogin: () => void;
+}
+
+interface RegisterErrors {
+  name?: string;
+  email?: string;
+  password?: string;
+  passwordConfirm?: string;
+  general?: string;
+}
+
+interface AxiosLikeError {
+  response?: {
+    data?: {
+      errors?: {
+        name?: string[];
+        email?: string[];
+        password?: string[];
+        password_confirmation?: string[];
+      };
+      message?: string;
+    };
+  };
+}
+
+const RegisterScreen = ({onRegister, onGoLogin}: RegisterScreenProps) => {
   const insets = useSafeAreaInsets();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [errors, setErrors] = useState({});
+  const [errors, setErrors] = useState<RegisterErrors>({});
 
-  const validate = () => {
-    const e = {};
+  const validate = (): RegisterErrors => {
+    const e: RegisterErrors = {};
     if (!name.trim()) {e.name = '이름을 입력해주세요.';}
     if (!email.trim()) {e.email = '이메일을 입력해주세요.';}
     if (!password) {e.password = '비밀번호를 입력해주세요.';}
@@ -39,8 +71,9 @@ const RegisterScreen = ({onRegister, onGoLogin}) => {
     try {
       await onRegister(name.trim(), email.trim(), password, passwordConfirm);
     } catch (err) {
-      const serverErrors = err?.response?.data?.errors ?? {};
-      const fallback = err?.response?.data?.message ?? '회원가입에 실패했습니다.';
+      const axiosErr = err as AxiosLikeError;
+      const serverErrors = axiosErr?.response?.data?.errors ?? {};
+      const fallback = axiosErr?.response?.data?.message ?? '회원가입에 실패했습니다.';
       if (Object.keys(serverErrors).length > 0) {
         setErrors({
           name: serverErrors.name?.[0],

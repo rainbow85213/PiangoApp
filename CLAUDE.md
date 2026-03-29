@@ -437,11 +437,11 @@ Fly.dev 무료 플랜의 sleep 상태를 해제하여 첫 API 요청 지연을 �
 - **영향**: 일정 저장·조회·히트맵 등 TourCast 기반 기능이 현재 동작하지 않을 수 있습니다.
 - **해결 방향**: TravelPlatform 팀에 `scheduleApi.ts` 상단 TODO 목록의 프록시 경로 구현 요청.
 
-### 2. 혼재된 JS/TS 파일 (일부 잔존)
+### ~~2. 혼재된 JS/TS 파일 (일부 잔존)~~ → 해결 완료
 
-- **내용**: `ChatScreen.js`, `LoginScreen.js`, `RegisterScreen.js`가 TypeScript로 작성되지 않았습니다.
-  (`useAuth.js`는 `useAuth.ts`로 마이그레이션 완료)
-- **해결 방향**: `.tsx`로 마이그레이션하여 타입 안정성 확보.
+- ~~**내용**: `ChatScreen.js`, `LoginScreen.js`, `RegisterScreen.js`가 TypeScript로 작성되지 않았습니다.~~
+- **해결**: `LoginScreen.tsx`, `RegisterScreen.tsx`, `ChatScreen.tsx`로 마이그레이션 완료 (2026-03-29).
+  모든 screens 디렉토리 파일이 TypeScript(.tsx)로 통일되었습니다.
 
 ---
 
@@ -454,4 +454,5 @@ Fly.dev 무료 플랜의 sleep 상태를 해제하여 첫 API 요청 지연을 �
 | 2026-03-29 | ~~401 인터셉터 미구현~~ | `api.js`에 response interceptor 추가. `setUnauthorizedHandler` 콜백으로 `useAuth.logout()` 연결 |
 | 2026-03-29 | ~~API URL 하드코딩~~ | `src/config/endpoints.ts` 신설. 모든 URL 통합 관리 |
 | 2026-03-29 | ~~useAuth.js~~ | `useAuth.ts`로 마이그레이션. `User`·`UseAuthReturn` 타입 추가 |
+| 2026-03-29 | ~~JS/TS 혼재 (screens)~~ | `LoginScreen`, `RegisterScreen`, `ChatScreen` `.tsx`로 마이그레이션. `ChatMessage` 타입 정의 및 `api.js` `// @ts-ignore` 처리 |
 | 2026-03-29 | ~~일정 저장 로컬 폴백~~ | API 실패 시 로컬 폴백 제거. `Alert.alert`로 명확히 안내 |

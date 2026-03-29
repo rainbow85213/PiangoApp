@@ -9,7 +9,21 @@ import {
 import {KeyboardAwareScrollView} from 'react-native-keyboard-aware-scroll-view';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 
-const LoginScreen = ({onLogin, onGoRegister}) => {
+interface LoginScreenProps {
+  onLogin: (email: string, password: string) => Promise<void>;
+  onGoRegister: () => void;
+}
+
+interface AxiosLikeError {
+  response?: {
+    data?: {
+      errors?: {email?: string[]};
+      message?: string;
+    };
+  };
+}
+
+const LoginScreen = ({onLogin, onGoRegister}: LoginScreenProps) => {
   const insets = useSafeAreaInsets();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -26,9 +40,10 @@ const LoginScreen = ({onLogin, onGoRegister}) => {
     try {
       await onLogin(email.trim(), password);
     } catch (e) {
+      const err = e as AxiosLikeError;
       const msg =
-        e?.response?.data?.errors?.email?.[0] ??
-        e?.response?.data?.message ??
+        err?.response?.data?.errors?.email?.[0] ??
+        err?.response?.data?.message ??
         '로그인에 실패했습니다. 다시 시도해주세요.';
       setError(msg);
     } finally {
