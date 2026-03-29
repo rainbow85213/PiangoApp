@@ -11,14 +11,14 @@ TravelPlatform (https://travel-platform.fly.dev)
 ▼
 PlangoApp  ← 현재 프로젝트 (React Native 모바일 앱)
 │
-│  REST API (직접 호출 — 현재 아키텍처 이슈 존재, 섹션 11 참조)
+│  REST API (TravelPlatform 프록시 경유)
 ▼
-TourCast (https://tour-cast.fly.dev)
+TourCast (https://tour-cast.fly.dev)  ← PlangoApp이 직접 호출하지 않음
 ```
 
 - PlangoApp은 TravelPlatform의 **유일한 모바일 클라이언트**입니다.
-- **TourCast 데이터는 원칙적으로 TravelPlatform(`/api/places`)을 통해 간접 수신해야 합니다.**
-- 단, 현재 코드에서는 `src/services/tourCastApi.ts`가 TourCast를 직접 호출하고 있습니다 (Known Issue — 섹션 11 참조).
+- TourCast 데이터는 `src/services/scheduleApi.ts`를 통해 **TravelPlatform 프록시 경로**로 호출합니다.
+- **단, TravelPlatform의 일정 프록시 경로(`/api/schedule/*`)가 아직 미구현입니다.** TravelPlatform 팀에 구현 요청이 필요합니다 (섹션 11 참조).
 
 ---
 
@@ -94,7 +94,7 @@ PlangoApp/
 │   │
 │   ├── services/               # API 클라이언트
 │   │   ├── api.js              # TravelPlatform axios 인스턴스 (인증 헤더·401 인터셉터)
-│   │   ├── tourCastApi.ts      # TourCast axios 인스턴스 (직접 호출 — Known Issue)
+│   │   ├── scheduleApi.ts      # 일정 API (TravelPlatform 프록시 경유)
 │   │   └── navigationService.ts # 네비게이션 유틸리티
 │   │
 │   └── types/                  # TypeScript 타입 정의
@@ -204,11 +204,12 @@ const serverMsg = error?.response?.data?.message ?? error?.response?.data?.error
 | POST | `/api/chat` | 챗봇 메시지 전송 | `ChatScreen.js` |
 | GET | `/api/chat/history` | 대화 기록 조회 | `App.tsx` |
 
-### TourCast 직접 연동 (현재 아키텍처 — Known Issue)
+### 일정 API — TravelPlatform 프록시 경유
 
-**Base URL**: `TOUR_CAST_BASE_URL` (`src/config/endpoints.ts`)
+**구현 파일**: `src/services/scheduleApi.ts`
+**Base URL**: `TRAVEL_PLATFORM_BASE_URL` (api.js 인스턴스 재사용)
 
-사용 중인 TourCast 엔드포인트:
+TourCast로 프록시해야 하는 엔드포인트 (TravelPlatform 팀 구현 필요):
 
 | 메서드 | 경로 | 용도 |
 |--------|------|------|
@@ -220,8 +221,8 @@ const serverMsg = error?.response?.data?.message ?? error?.response?.data?.error
 | PATCH | `/api/schedule/item/:id` | 일정 상태 업데이트 |
 | POST | `/api/user/device-token` | FCM 디바이스 토큰 등록 |
 
-> **원칙**: TourCast는 TravelPlatform을 통해 간접 호출해야 합니다.
-> 현재 직접 호출 구조는 추후 TravelPlatform 프록시로 전환 예정입니다.
+> **현황**: 앱 코드는 TravelPlatform을 경유하도록 수정 완료.
+> **TODO**: TravelPlatform이 위 경로들을 TourCast로 프록시하도록 구현 필요.
 
 ---
 
@@ -311,15 +312,16 @@ NativeWind로 표현하기 어려운 동적 스타일(애니메이션, `position
 
 | TourCast 변경 사항 | PlangoApp 업데이트 위치 |
 |--------------------|------------------------|
-| 일정 응답 구조 변경 | `src/services/tourCastApi.ts` + `src/screens/MapScreen.tsx` |
+| 일정 응답 구조 변경 | `src/services/scheduleApi.ts` + `src/screens/MapScreen.tsx` |
 | 타입 변경 | `src/types/schedule.ts` |
-| Base URL 변경 | `src/config/endpoints.ts`의 `TOUR_CAST_BASE_URL` |
+| Base URL 변경 | `src/config/endpoints.ts`의 `TOUR_CAST_BASE_URL` (참조용) + TravelPlatform 프록시 설정 |
 
 ### 절대 규칙
 
-- **TourCast를 직접 호출하는 신규 코드를 추가하지 마세요.**
-  TourCast 데이터가 필요한 경우 TravelPlatform `/api/places` 또는 관련 프록시 엔드포인트를 사용하거나,
-  TravelPlatform 팀에 프록시 엔드포인트 추가를 요청하세요.
+- **TourCast를 직접 호출하는 코드를 추가하지 마세요.**
+  일정 관련 기능은 `src/services/scheduleApi.ts`를 통해 TravelPlatform 프록시로 호출하세요.
+  신규 TourCast 기능이 필요하면 TravelPlatform 팀에 프록시 엔드포인트 추가를 요청하고,
+  `scheduleApi.ts`에 TODO 주석과 함께 추가하세요.
 - TravelPlatform API 응답은 항상 `{ success, message, data, errors }` 구조로 처리하세요.
   `response.data` 직접 접근이 아닌 `response.data?.data`에서 실제 데이터를 추출하세요.
 
@@ -393,6 +395,7 @@ eslint .
 
 앱 시작 시 `App.tsx`의 `warmupServers()`가 자동 실행됩니다.
 Fly.dev 무료 플랜의 sleep 상태를 해제하여 첫 API 요청 지연을 방지합니다.
+현재 **TravelPlatform만** 워밍업 대상입니다 (앱이 TourCast를 직접 호출하지 않으므로).
 
 ---
 
@@ -427,20 +430,14 @@ Fly.dev 무료 플랜의 sleep 상태를 해제하여 첫 API 요청 지연을 �
 
 ## 11. Known Issues
 
-### 1. TourCast 직접 호출 (아키텍처 위반)
+### 1. TravelPlatform 일정 프록시 미구현
 
-- **파일**: `src/services/tourCastApi.ts`
-- **내용**: 에코시스템 설계 원칙과 달리 TourCast를 직접 호출하고 있습니다.
-- **영향**: TourCast 인증 방식 변경 시 프론트엔드도 동시 수정 필요.
-- **해결 방향**: TravelPlatform에 일정 관련 프록시 엔드포인트 추가 후 `tourCastApi.ts` 제거.
+- **파일**: `src/services/scheduleApi.ts`
+- **내용**: 앱 코드는 TravelPlatform 경유로 전환 완료됐으나, TravelPlatform 서버에 `/api/schedule/*` 프록시 라우트가 아직 없습니다.
+- **영향**: 일정 저장·조회·히트맵 등 TourCast 기반 기능이 현재 동작하지 않을 수 있습니다.
+- **해결 방향**: TravelPlatform 팀에 `scheduleApi.ts` 상단 TODO 목록의 프록시 경로 구현 요청.
 
-### 2. MapScreen 더미 데이터
-
-- **파일**: `src/screens/MapScreen.tsx:119`
-- **내용**: `DUMMY_ITEMS` 배열(도쿄 여행 더미)이 TourCast `/api/schedule/map` 응답이 비어 있을 때 폴백으로 사용됩니다.
-- **해결 방향**: 백엔드 `/api/schedule/map` 안정화 후 더미 데이터 제거.
-
-### 3. 혼재된 JS/TS 파일 (일부 잔존)
+### 2. 혼재된 JS/TS 파일 (일부 잔존)
 
 - **내용**: `ChatScreen.js`, `LoginScreen.js`, `RegisterScreen.js`가 TypeScript로 작성되지 않았습니다.
   (`useAuth.js`는 `useAuth.ts`로 마이그레이션 완료)
@@ -448,11 +445,13 @@ Fly.dev 무료 플랜의 sleep 상태를 해제하여 첫 API 요청 지연을 �
 
 ---
 
-### 해결된 이슈 (2026-03-29)
+### 해결된 이슈
 
-| 이슈 | 해결 내용 |
-|------|----------|
-| ~~#2 401 인터셉터 미구현~~ | `api.js`에 response interceptor 추가. `setUnauthorizedHandler` 콜백으로 `useAuth.logout()` 연결 |
-| ~~#4 API URL 하드코딩~~ | `src/config/endpoints.ts` 신설. `api.js`·`tourCastApi.ts`·`App.tsx` URL 통합 관리 |
-| ~~#5 useAuth.js~~ | `useAuth.ts`로 마이그레이션. `User`·`UseAuthReturn` 타입 추가 |
-| ~~#6 일정 저장 로컬 폴백~~ | API 실패 시 로컬 폴백 제거. `Alert.alert`로 사용자에게 명확히 안내 |
+| 날짜 | 이슈 | 해결 내용 |
+|------|------|----------|
+| 2026-03-29 | ~~TourCast 직접 호출~~ | `tourCastApi.ts` 제거. `scheduleApi.ts`로 교체하여 `api.js`(TravelPlatform) 경유 |
+| 2026-03-29 | ~~MapScreen 더미 데이터~~ | `DUMMY_ITEMS`·`DUMMY_HEATMAP` 제거. 빈 배열·에러 상태 UI로 대체 |
+| 2026-03-29 | ~~401 인터셉터 미구현~~ | `api.js`에 response interceptor 추가. `setUnauthorizedHandler` 콜백으로 `useAuth.logout()` 연결 |
+| 2026-03-29 | ~~API URL 하드코딩~~ | `src/config/endpoints.ts` 신설. 모든 URL 통합 관리 |
+| 2026-03-29 | ~~useAuth.js~~ | `useAuth.ts`로 마이그레이션. `User`·`UseAuthReturn` 타입 추가 |
+| 2026-03-29 | ~~일정 저장 로컬 폴백~~ | API 실패 시 로컬 폴백 제거. `Alert.alert`로 명확히 안내 |

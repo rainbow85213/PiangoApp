@@ -1,18 +1,28 @@
-import axios from 'axios';
-import type {HeatmapPoint, RouteResponse, ScheduleItem} from '../types/schedule';
-import {TOUR_CAST_BASE_URL} from '../config/endpoints';
+/**
+ * 일정 관련 API — TravelPlatform 프록시 경유
+ *
+ * TravelPlatform이 아래 경로들을 TourCast에 프록시해야 합니다.
+ * 경로 미구현 시 TravelPlatform 팀에 추가 요청이 필요합니다.
+ *
+ * TODO(TravelPlatform): 아래 경로들을 TourCast 프록시로 구현 필요
+ *   GET  /api/schedule/map
+ *   GET  /api/schedule/route
+ *   GET  /api/schedule/heatmap
+ *   POST /api/schedule
+ *   GET  /api/schedule/list
+ *   PATCH /api/schedule/item/:id
+ *   POST /api/user/device-token
+ */
 
-const tourCastApi = axios.create({
-  baseURL: TOUR_CAST_BASE_URL,
-  timeout: 30000,
-});
+import api from './api';
+import type {HeatmapPoint, RouteResponse, ScheduleItem} from '../types/schedule';
 
 export const getScheduleForMap = async (params: {
   userId: string;
   date: string;
   filters?: string;
 }) => {
-  const response = await tourCastApi.get('/api/schedule/map', {params});
+  const response = await api.get('/api/schedule/map', {params});
   return response.data;
 };
 
@@ -20,7 +30,7 @@ export const getScheduleRoute = async (params: {
   userId: string;
   date: string;
 }): Promise<RouteResponse> => {
-  const response = await tourCastApi.get('/api/schedule/route', {params});
+  const response = await api.get('/api/schedule/route', {params});
   return response.data;
 };
 
@@ -32,11 +42,11 @@ export const getScheduleRoute = async (params: {
 export const getHeatmap = async (params: {
   userId: string;
 }): Promise<HeatmapPoint[]> => {
-  const response = await tourCastApi.get('/api/schedule/heatmap', {params});
+  const response = await api.get('/api/schedule/heatmap', {params});
   return response.data;
 };
 
-// 실제 TourCast API: 아이템 1개씩 개별 저장
+// 아이템 1개씩 개별 저장
 // POST /api/schedule body: { userId, scheduledAt, title, location: { name, address, category, lat, lng } }
 type ScheduleItemInput = Omit<ScheduleItem, 'id' | 'status'>;
 
@@ -49,7 +59,7 @@ export const saveSchedule = async (params: {
 }): Promise<void> => {
   await Promise.all(
     params.items.map(item =>
-      tourCastApi.post('/api/schedule', {
+      api.post('/api/schedule', {
         userId: params.userId,
         title: item.title,
         scheduledAt: item.scheduledAt ?? `${params.date}T${item.time}:00Z`,
@@ -74,7 +84,7 @@ export const getScheduleList = async (params: {
   total: number;
   hasMore: boolean;
 }> => {
-  const response = await tourCastApi.get('/api/schedule/list', {params});
+  const response = await api.get('/api/schedule/list', {params});
   return response.data;
 };
 
@@ -82,8 +92,17 @@ export const updateScheduleItemStatus = async (
   itemId: string,
   status: ScheduleItem['status'],
 ): Promise<{id: string; status: string}> => {
-  const response = await tourCastApi.patch(`/api/schedule/item/${itemId}`, {status});
+  const response = await api.patch(`/api/schedule/item/${itemId}`, {status});
   return response.data;
 };
 
-export default tourCastApi;
+/**
+ * FCM 디바이스 토큰 등록
+ * api.js의 Bearer Token 인증 헤더가 자동으로 포함됩니다.
+ */
+export const registerDeviceToken = async (
+  fcmToken: string,
+  platform: string,
+): Promise<void> => {
+  await api.post('/api/user/device-token', {token: fcmToken, platform});
+};

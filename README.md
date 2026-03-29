@@ -12,9 +12,9 @@ TravelPlatform (https://travel-platform.fly.dev)
 │  REST API + Laravel Sanctum Bearer Token
 ▼
 PlangoApp  ← 이 앱 (React Native CLI)
-│  REST API (직접 호출 — 추후 TravelPlatform 프록시로 전환 예정)
+│  REST API (TravelPlatform 프록시 경유)
 ▼
-TourCast (https://tour-cast.fly.dev)
+TourCast (https://tour-cast.fly.dev)  ← 앱이 직접 호출하지 않음
 ```
 
 ---
@@ -57,8 +57,8 @@ PlangoApp/
 │   │   ├── NotificationScreen.tsx
 │   │   └── ApiTestScreen.tsx   # 개발용
 │   ├── services/
-│   │   ├── api.js              # TravelPlatform axios 인스턴스
-│   │   └── tourCastApi.ts      # TourCast axios 인스턴스
+│   │   ├── api.js              # TravelPlatform axios 인스턴스 (인증·401 인터셉터)
+│   │   └── scheduleApi.ts      # 일정 API (TravelPlatform 프록시 경유)
 │   └── types/
 │       └── schedule.ts
 ├── App.tsx                     # 루트 (전역 상태·네비게이션·FCM 초기화)
@@ -109,7 +109,7 @@ npm run android
 ### 채팅 (AI 일정 생성)
 
 - AI 챗봇과 대화로 여행 일정 생성
-- 생성된 일정을 TourCast 서버에 저장, 지도 화면으로 연결
+- 생성된 일정을 TravelPlatform 프록시를 통해 저장, 지도 화면으로 연결
 - 서버 저장 실패 시 사용자에게 Alert로 명확히 안내
 
 ### 지도
@@ -131,10 +131,10 @@ URL은 `src/config/endpoints.ts` 한 곳에서 관리합니다.
 
 ```ts
 export const TRAVEL_PLATFORM_BASE_URL = 'https://travel-platform.fly.dev';
-export const TOUR_CAST_BASE_URL       = 'https://tour-cast.fly.dev';
+export const TOUR_CAST_BASE_URL       = 'https://tour-cast.fly.dev'; // 참조용 (앱에서 직접 호출 안 함)
 ```
 
-URL을 변경해야 할 경우 이 파일만 수정하면 `api.js`, `tourCastApi.ts`, `App.tsx`에 모두 반영됩니다.
+`TRAVEL_PLATFORM_BASE_URL`을 변경하면 `api.js`·`scheduleApi.ts`·`App.tsx`에 모두 반영됩니다.
 
 ---
 
@@ -158,8 +158,10 @@ google-services.json           ← Firebase Android 설정
 
 | 항목 | 내용 |
 |------|------|
+| TourCast 직접 호출 제거 | `tourCastApi.ts` 삭제 → `scheduleApi.ts` 신설. 모든 일정 API를 TravelPlatform `api.js` 경유로 전환 |
+| MapScreen 더미 데이터 제거 | `DUMMY_ITEMS`·`DUMMY_HEATMAP` 삭제. 빈 배열·에러 상태는 기존 UI로 처리 |
 | 401 인터셉터 구현 | 토큰 만료 시 자동 로그아웃. `setUnauthorizedHandler` 콜백 패턴으로 axios ↔ React 훅 연결 |
-| URL 상수 분리 | `src/config/endpoints.ts` 신설. `api.js`·`tourCastApi.ts`·`App.tsx`의 URL 하드코딩 제거 |
+| URL 상수 분리 | `src/config/endpoints.ts` 신설. 모든 URL 하드코딩 제거 |
 | `useAuth` TS 마이그레이션 | `useAuth.js` → `useAuth.ts`. `User`·`UseAuthReturn` 인터페이스 추가 |
 | 일정 저장 실패 처리 | API 실패 시 로컬 폴백 제거, `Alert.alert`로 사용자에게 명확히 안내 |
 

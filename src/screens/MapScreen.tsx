@@ -12,7 +12,7 @@ import {
 import MapView, {Heatmap, Polyline, UrlTile, PROVIDER_GOOGLE} from 'react-native-maps';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import ScheduleMarker from '../components/ScheduleMarker';
-import {getHeatmap, getScheduleForMap, getScheduleRoute} from '../services/tourCastApi';
+import {getHeatmap, getScheduleForMap, getScheduleRoute} from '../services/scheduleApi';
 import type {
   CategoryFilter,
   HeatmapPoint,
@@ -47,17 +47,6 @@ const HEATMAP_GRADIENT = {
   startPoints: [0.1, 0.5, 1.0],
   colorMapSize: 256,
 };
-
-// API 미구현 시 폴백 더미 히트맵
-const DUMMY_HEATMAP: HeatmapPoint[] = [
-  {lat: 35.6851, lng: 139.7100, weight: 8},
-  {lat: 35.6938, lng: 139.7034, weight: 12},
-  {lat: 35.7148, lng: 139.7967, weight: 15},
-  {lat: 35.6595, lng: 139.7004, weight: 5},
-  {lat: 35.6564, lng: 139.7453, weight: 3},
-  {lat: 35.7020, lng: 139.7750, weight: 10},
-  {lat: 35.6780, lng: 139.7195, weight: 7},
-];
 
 const STATUS_COLORS = {
   completed: '#22c55e',
@@ -116,15 +105,6 @@ const MapScreen: React.FC<Props> = ({onGoBack, onSelectItem, initialSchedule, us
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // TODO: 백엔드 /api/schedule/map 구현 후 아래 더미 데이터 제거
-  const DUMMY_ITEMS: ScheduleItem[] = [
-    {id: '1', title: '신주쿠 교엔', latitude: 35.6851, longitude: 139.7100, status: 'completed', time: '09:00', scheduledAt: `${selectedDate}T09:00:00Z`, category: 'attraction', description: '도쿄 최대 정원', order: 1},
-    {id: '2', title: '이치란 라멘 신주쿠점', latitude: 35.6938, longitude: 139.7034, status: 'completed', time: '12:00', scheduledAt: `${selectedDate}T12:00:00Z`, category: 'restaurant', description: '1인 라멘 맛집', order: 2},
-    {id: '3', title: '센소지 절', latitude: 35.7148, longitude: 139.7967, status: 'in_progress', time: '14:00', scheduledAt: `${selectedDate}T14:00:00Z`, category: 'attraction', description: '도쿄에서 가장 오래된 사원', order: 3},
-    {id: '4', title: '시부야 스크램블 교차로', latitude: 35.6595, longitude: 139.7004, status: 'pending', time: '17:00', scheduledAt: `${selectedDate}T17:00:00Z`, category: 'attraction', description: '세계에서 가장 바쁜 교차로', order: 4},
-    {id: '5', title: '도쿄 프린스 호텔', latitude: 35.6564, longitude: 139.7453, status: 'pending', time: '20:00', scheduledAt: `${selectedDate}T20:00:00Z`, category: 'accommodation', description: '숙박', order: 5},
-  ];
-
   const fetchSchedule = useCallback(async () => {
     // 외부에서 일정을 받은 경우 fetch 생략
     if (initialSchedule != null) {
@@ -169,8 +149,7 @@ const MapScreen: React.FC<Props> = ({onGoBack, onSelectItem, initialSchedule, us
         setScheduleItems([]);
       }
     } catch {
-      // 백엔드 미구현 상태: 더미 데이터로 대체
-      setScheduleItems(DUMMY_ITEMS);
+      setError('일정을 불러오지 못했습니다.');
     } finally {
       setIsLoading(false);
     }
@@ -190,9 +169,9 @@ const MapScreen: React.FC<Props> = ({onGoBack, onSelectItem, initialSchedule, us
     setHeatmapLoading(true);
     try {
       const data = await getHeatmap({userId});
-      setHeatmapPoints(data?.length ? data : DUMMY_HEATMAP);
+      setHeatmapPoints(data ?? []);
     } catch {
-      setHeatmapPoints(DUMMY_HEATMAP);
+      setHeatmapPoints([]);
     } finally {
       setHeatmapLoading(false);
     }

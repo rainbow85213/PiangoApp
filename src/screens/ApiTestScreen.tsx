@@ -13,13 +13,12 @@ import {
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import api from '../services/api';
-import tourCastApi from '../services/tourCastApi';
 
 type Status = 'idle' | 'running' | 'ok' | 'error';
 
 interface TestCase {
   id: string;
-  server: 'TravelPlatform' | 'TourCast';
+  server: 'TravelPlatform';
   method: 'GET' | 'POST';
   endpoint: string;
   description: string;
@@ -75,15 +74,15 @@ const TEST_CASES: TestCase[] = [
     run: () => api.post('/api/chat', {message: '도쿄 여행 1일 코스 추천해줘'}),
   },
 
-  // ── TourCast ────────────────────────────────────────────────
+  // ── 일정 (TravelPlatform → TourCast 프록시) ─────────────────
   {
     id: 'schedule_map',
-    server: 'TourCast',
+    server: 'TravelPlatform',
     method: 'GET',
     endpoint: '/api/schedule/map',
-    description: '여행 일정 지도 데이터',
+    description: '여행 일정 지도 데이터 (TourCast 프록시)',
     run: () =>
-      tourCastApi.get('/api/schedule/map', {
+      api.get('/api/schedule/map', {
         params: {userId: '1', date: new Date().toISOString().slice(0, 10)},
       }),
   },
@@ -91,7 +90,6 @@ const TEST_CASES: TestCase[] = [
 
 const SERVER_COLORS = {
   TravelPlatform: '#6366f1',
-  TourCast: '#0ea5e9',
 };
 
 const STATUS_ICON: Record<Status, string> = {
@@ -181,11 +179,6 @@ const ApiTestScreen: React.FC<Props> = ({onGoBack}) => {
           name="TravelPlatform"
           url="travel-platform.fly.dev"
           color={SERVER_COLORS.TravelPlatform}
-        />
-        <ServerCard
-          name="TourCast"
-          url="tour-cast.fly.dev"
-          color={SERVER_COLORS.TourCast}
         />
       </View>
 

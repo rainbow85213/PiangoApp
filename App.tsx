@@ -28,11 +28,8 @@ import NotificationScreen from './src/screens/NotificationScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import ScheduleDetailScreen from './src/screens/ScheduleDetailScreen';
 import api from './src/services/api';
-import tourCastApi, {saveSchedule} from './src/services/tourCastApi';
-import {
-  TRAVEL_PLATFORM_BASE_URL,
-  TOUR_CAST_BASE_URL,
-} from './src/config/endpoints';
+import {saveSchedule, registerDeviceToken} from './src/services/scheduleApi';
+import {TRAVEL_PLATFORM_BASE_URL} from './src/config/endpoints';
 import type {ScheduleItem} from './src/types/schedule';
 
 const CHAT_MESSAGES_KEY = '@plango_chat_messages';
@@ -59,7 +56,7 @@ type UnauthScreen = 'login' | 'register';
 
 // ── 서버 워밍업 (fly.dev 무료 플랜: 비활성 시 sleep → 첫 요청 지연 방지) ──
 async function warmupServers() {
-  const targets = [TRAVEL_PLATFORM_BASE_URL, TOUR_CAST_BASE_URL];
+  const targets = [TRAVEL_PLATFORM_BASE_URL];
   await Promise.allSettled(
     targets.map(url =>
       fetch(url, {method: 'GET'}).catch(() => {}),
@@ -67,14 +64,10 @@ async function warmupServers() {
   );
 }
 
-// ── FCM 토큰을 tour-cast 서버에 등록 ──────────────────────────────────────
-async function uploadDeviceToken(fcmToken: string, authToken: string) {
+// ── FCM 토큰을 서버에 등록 (TravelPlatform 프록시 경유) ──────────────────
+async function uploadDeviceToken(fcmToken: string) {
   try {
-    await tourCastApi.post(
-      '/api/user/device-token',
-      {token: fcmToken, platform: Platform.OS},
-      {headers: {Authorization: `Bearer ${authToken}`}},
-    );
+    await registerDeviceToken(fcmToken, Platform.OS);
     console.log('[FCM] device token uploaded');
   } catch (e) {
     console.warn('[FCM] device token upload failed:', e);
@@ -243,7 +236,7 @@ function AppContent() {
       if (token) {
         fcmTokenRef.current = token;
         if (authToken) {
-          uploadDeviceToken(token, authToken);
+          uploadDeviceToken(token);
         }
       }
     });
@@ -252,7 +245,7 @@ function AppContent() {
   // ── 로그인 후 토큰 업로드 ─────────────────────────────────────────────
   useEffect(() => {
     if (authToken && fcmTokenRef.current) {
-      uploadDeviceToken(fcmTokenRef.current, authToken);
+      uploadDeviceToken(fcmTokenRef.current);
     }
   }, [authToken]);
 
