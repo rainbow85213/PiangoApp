@@ -1,10 +1,7 @@
 /**
- * 일정 관련 API — TravelPlatform 프록시 경유
+ * 일정 관련 API — TravelPlatform 경유
  *
- * TravelPlatform이 아래 경로들을 TourCast에 프록시해야 합니다.
- * 경로 미구현 시 TravelPlatform 팀에 추가 요청이 필요합니다.
- *
- * TODO(TravelPlatform): 아래 경로들을 TourCast 프록시로 구현 필요
+ * TravelPlatform ScheduleController가 아래 경로들을 처리합니다.
  *   GET  /api/schedule/map
  *   GET  /api/schedule/route
  *   GET  /api/schedule/heatmap
@@ -15,7 +12,7 @@
  */
 
 import api from './api';
-import type {HeatmapPoint, RouteResponse, ScheduleItem} from '../types/schedule';
+import type {HeatmapPoint, RouteResponse, ScheduleItem, ScheduleItemInput} from '../types/schedule';
 
 export const getScheduleForMap = async (params: {
   userId: string;
@@ -46,33 +43,30 @@ export const getHeatmap = async (params: {
   return response.data;
 };
 
-// 아이템 1개씩 개별 저장
-// POST /api/schedule body: { userId, scheduledAt, title, location: { name, address, category, lat, lng } }
-type ScheduleItemInput = Omit<ScheduleItem, 'id' | 'status'>;
-
+// POST /api/schedule — 일정 전체를 단건 배치 전송
+// Bearer 토큰에서 userId를 자동 추출하므로 클라이언트에서 별도 전송 불필요.
+// items[].order는 index 기반으로 자동 주입 (0부터 시작).
 export const saveSchedule = async (params: {
-  userId: string;
   date: string;
   title: string;
   sourceText?: string;
   items: ScheduleItemInput[];
 }): Promise<void> => {
-  await Promise.all(
-    params.items.map(item =>
-      api.post('/api/schedule', {
-        userId: params.userId,
-        title: item.title,
-        scheduledAt: item.scheduledAt ?? `${params.date}T${item.time}:00Z`,
-        location: {
-          name: item.title,
-          address: item.description ?? item.title,
-          category: item.category,
-          lat: item.latitude,
-          lng: item.longitude,
-        },
-      }),
-    ),
-  );
+  await api.post('/api/schedule', {
+    date: params.date,
+    title: params.title,
+    sourceText: params.sourceText,
+    items: params.items.map((item, index) => ({
+      title: item.title,
+      latitude: item.latitude,
+      longitude: item.longitude,
+      time: item.time,
+      scheduledAt: item.scheduledAt ?? `${params.date}T${item.time}:00Z`,
+      category: item.category,
+      description: item.description,
+      order: index,
+    })),
+  });
 };
 
 export const getScheduleList = async (params: {

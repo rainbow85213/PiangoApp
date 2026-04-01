@@ -172,9 +172,8 @@ function AppContent() {
     });
   }, []);
 
-  // 일정 저장: TourCast 서버에 저장
+  // 일정 저장: TravelPlatform 서버에 저장
   const handleSaveSchedule = useCallback(async (item: ChatMessage) => {
-    const userId = String((user as {id?: string | number} | null)?.id ?? '1');
     try {
       if (item.schedule?.length) {
         const firstScheduledAt = item.schedule[0].scheduledAt;
@@ -183,7 +182,6 @@ function AppContent() {
           : new Date().toISOString().split('T')[0];
 
         await saveSchedule({
-          userId,
           date,
           title: `AI 추천 일정 (${date})`,
           sourceText: item.text,
@@ -195,7 +193,6 @@ function AppContent() {
             scheduledAt: s.scheduledAt,
             category: s.category,
             description: s.description,
-            order: s.order,
           })),
         });
       }

@@ -35,3 +35,16 @@ export type CategoryFilter =
   | 'attraction'
   | 'accommodation'
   | 'transport';
+
+// POST /api/schedule 요청 시 items 배열의 각 항목 타입.
+// order는 saveSchedule이 index 기반으로 자동 주입하므로 optional.
+export interface ScheduleItemInput {
+  title: string;
+  latitude: number;
+  longitude: number;
+  time: string;
+  scheduledAt?: string;
+  category: ScheduleItem['category'];
+  description?: string;
+  order?: number;
+}

@@ -430,12 +430,11 @@ Fly.dev 무료 플랜의 sleep 상태를 해제하여 첫 API 요청 지연을 �
 
 ## 11. Known Issues
 
-### 1. TravelPlatform 일정 프록시 미구현
+### ~~1. TravelPlatform 일정 프록시 미구현~~ → 해결 완료
 
-- **파일**: `src/services/scheduleApi.ts`
-- **내용**: 앱 코드는 TravelPlatform 경유로 전환 완료됐으나, TravelPlatform 서버에 `/api/schedule/*` 프록시 라우트가 아직 없습니다.
-- **영향**: 일정 저장·조회·히트맵 등 TourCast 기반 기능이 현재 동작하지 않을 수 있습니다.
-- **해결 방향**: TravelPlatform 팀에 `scheduleApi.ts` 상단 TODO 목록의 프록시 경로 구현 요청.
+- ~~**내용**: TravelPlatform 서버에 `/api/schedule/*` 프록시 라우트가 아직 없었습니다.~~
+- **해결**: TravelPlatform ScheduleController 구현 완료. OrbStack E2E 테스트로 전체 흐름 검증.
+  `saveSchedule` 단건 배치 전송으로 개편 + `date`·`items[].order` 필수 필드 반영 (2026-03-29).
 
 ### ~~2. 혼재된 JS/TS 파일 (일부 잔존)~~ → 해결 완료
 
@@ -455,4 +454,5 @@ Fly.dev 무료 플랜의 sleep 상태를 해제하여 첫 API 요청 지연을 �
 | 2026-03-29 | ~~API URL 하드코딩~~ | `src/config/endpoints.ts` 신설. 모든 URL 통합 관리 |
 | 2026-03-29 | ~~useAuth.js~~ | `useAuth.ts`로 마이그레이션. `User`·`UseAuthReturn` 타입 추가 |
 | 2026-03-29 | ~~JS/TS 혼재 (screens)~~ | `LoginScreen`, `RegisterScreen`, `ChatScreen` `.tsx`로 마이그레이션. `ChatMessage` 타입 정의 및 `api.js` `// @ts-ignore` 처리 |
+| 2026-03-29 | ~~TravelPlatform 일정 프록시 미구현~~ | TravelPlatform ScheduleController 구현 완료. OrbStack E2E 테스트로 전체 흐름 검증. date/items[].order 필드 필수 요구사항 반영. |
 | 2026-03-29 | ~~일정 저장 로컬 폴백~~ | API 실패 시 로컬 폴백 제거. `Alert.alert`로 명확히 안내 |
