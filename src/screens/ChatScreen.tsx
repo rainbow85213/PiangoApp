@@ -100,7 +100,7 @@ const ChatScreen = ({
   const [currentLocation, setCurrentLocation] = React.useState<{
     latitude: number;
     longitude: number;
-  } | null>(null);
+  }>({latitude: 37.660483, longitude: 126.770803});
 
   // 마운트 시 1회 위치 수집 (배터리 절약)
   useEffect(() => {
@@ -161,14 +161,11 @@ const ChatScreen = ({
     onSetLoading(true);
 
     try {
-      const chatPayload: {message: string; latitude?: number; longitude?: number} = {
+      const response = await api.post('/api/chat', {
         message: text,
-      };
-      if (currentLocation) {
-        chatPayload.latitude = currentLocation.latitude;
-        chatPayload.longitude = currentLocation.longitude;
-      }
-      const response = await api.post('/api/chat', chatPayload);
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude,
+      });
 
       // Laravel ApiResponse 구조: { success, message, data: { reply, schedule? } }
       const resData: ChatApiResponseData = response.data?.data ?? {};

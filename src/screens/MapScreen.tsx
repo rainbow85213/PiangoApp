@@ -22,8 +22,8 @@ import type {
 } from '../types/schedule';
 
 const DEFAULT_REGION = {
-  latitude: 35.6895,
-  longitude: 139.6917,
+  latitude: 37.660483,
+  longitude: 126.770803,
   latitudeDelta: 0.12,
   longitudeDelta: 0.08,
 };
