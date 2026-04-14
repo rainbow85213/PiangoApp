@@ -46,6 +46,7 @@ interface AxiosLikeError {
     };
   };
   message?: string;
+  code?: string;
 }
 
 interface ChatScreenProps {
@@ -186,12 +187,15 @@ const ChatScreen = ({
       const err = error as AxiosLikeError;
       const status = err?.response?.status;
       const serverMsg = err?.response?.data?.message ?? err?.response?.data?.error;
+      const isTimeout = err?.code === 'ECONNABORTED' || err?.message?.includes('timeout');
       const detail = status
         ? `[${status}] ${serverMsg ?? err?.message ?? '알 수 없는 오류'}`
+        : isTimeout
+        ? '서버 응답 시간이 초과됐습니다. 서버가 시작 중일 수 있으니 잠시 후 다시 시도해주세요.'
         : (err?.message ?? '네트워크 연결을 확인해주세요.');
       onAddMessage({
         id: `error-${Date.now()}`,
-        text: `서버 오류: ${detail}`,
+        text: isTimeout ? detail : `서버 오류: ${detail}`,
         role: 'error',
       });
     } finally {

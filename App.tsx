@@ -55,13 +55,27 @@ type AuthScreen =
 type UnauthScreen = 'login' | 'register';
 
 // ── 서버 워밍업 (fly.dev 무료 플랜: 비활성 시 sleep → 첫 요청 지연 방지) ──
+// 최대 MAX_RETRIES회 재시도하여 서버가 실제로 응답할 때까지 기다립니다.
 async function warmupServers() {
-  const targets = [TRAVEL_PLATFORM_BASE_URL];
-  await Promise.allSettled(
-    targets.map(url =>
-      fetch(url, {method: 'GET'}).catch(() => {}),
-    ),
-  );
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY_MS = 5000;
+
+  const pingOnce = async (url: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`${url}/api/health`, {method: 'GET'});
+      return res.status < 500;
+    } catch {
+      return false;
+    }
+  };
+
+  for (let i = 0; i < MAX_RETRIES; i++) {
+    const ok = await pingOnce(TRAVEL_PLATFORM_BASE_URL);
+    if (ok) {return;}
+    if (i < MAX_RETRIES - 1) {
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+    }
+  }
 }
 
 // ── FCM 토큰을 서버에 등록 (TravelPlatform 프록시 경유) ──────────────────

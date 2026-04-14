@@ -3,7 +3,7 @@ import {TRAVEL_PLATFORM_BASE_URL} from '../config/endpoints';
 
 const api = axios.create({
   baseURL: TRAVEL_PLATFORM_BASE_URL,
-  timeout: 30000,
+  timeout: 60000,
   headers: {
     'Content-Type': 'application/json',
     Accept: 'application/json',
