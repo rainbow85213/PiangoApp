@@ -3,12 +3,18 @@ import {
   ActivityIndicator,
   FlatList,
   Keyboard,
+  PermissionsAndroid,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+// iOS Info.plist 필수 키 확인:
+//   ✅ NSLocationWhenInUseUsageDescription — 등록됨
+//   ❌ NSLocationAlwaysAndWhenInUseUsageDescription — 없음 (앱이 백그라운드 위치를 사용하지 않으므로 현재는 불필요)
+import Geolocation from '@react-native-community/geolocation';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 // @ts-ignore — api.js is a plain JS module without type declarations
@@ -90,6 +96,39 @@ const ChatScreen = ({
   const flatListRef = useRef<FlatList<ChatMessage>>(null);
   const insets = useSafeAreaInsets();
   const [keyboardHeight, setKeyboardHeight] = React.useState(0);
+  const [currentLocation, setCurrentLocation] = React.useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+
+  // 마운트 시 1회 위치 수집 (배터리 절약)
+  useEffect(() => {
+    const fetchLocation = () => {
+      Geolocation.getCurrentPosition(
+        position => {
+          setCurrentLocation({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          });
+        },
+        () => {/* 실패 시 null 유지 — 위치 없이도 채팅 정상 동작 */},
+        {timeout: 10000, maximumAge: 60000, enableHighAccuracy: false},
+      );
+    };
+
+    if (Platform.OS === 'android') {
+      PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+      ).then(granted => {
+        if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+          fetchLocation();
+        }
+      }).catch(() => {/* 권한 요청 실패 — 무시 */});
+    } else {
+      // iOS: NSLocationWhenInUseUsageDescription 설정 시 자동 권한 팝업
+      fetchLocation();
+    }
+  }, []);
 
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', e => {
@@ -121,7 +160,14 @@ const ChatScreen = ({
     onSetLoading(true);
 
     try {
-      const response = await api.post('/api/chat', {message: text});
+      const chatPayload: {message: string; latitude?: number; longitude?: number} = {
+        message: text,
+      };
+      if (currentLocation) {
+        chatPayload.latitude = currentLocation.latitude;
+        chatPayload.longitude = currentLocation.longitude;
+      }
+      const response = await api.post('/api/chat', chatPayload);
 
       // Laravel ApiResponse 구조: { success, message, data: { reply, schedule? } }
       const resData: ChatApiResponseData = response.data?.data ?? {};
@@ -151,7 +197,7 @@ const ChatScreen = ({
     } finally {
       onSetLoading(false);
     }
-  }, [inputText, isLoading, onAddMessage, onSetInputText, onSetLoading]);
+  }, [inputText, isLoading, currentLocation, onAddMessage, onSetInputText, onSetLoading]);
 
   const handleGoMapWithSchedule = useCallback((item: ChatMessage) => {
     const navigate = onGoMapWithSchedule ?? onGoMap;

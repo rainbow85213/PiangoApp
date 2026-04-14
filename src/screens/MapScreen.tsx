@@ -12,7 +12,7 @@ import {
 import MapView, {Heatmap, Polyline, UrlTile, PROVIDER_GOOGLE} from 'react-native-maps';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import ScheduleMarker from '../components/ScheduleMarker';
-import {getHeatmap, getScheduleForMap, getScheduleRoute} from '../services/scheduleApi';
+import {getHeatmap, getScheduleForMap, getScheduleList, getScheduleRoute} from '../services/scheduleApi';
 import type {
   CategoryFilter,
   HeatmapPoint,
@@ -95,6 +95,23 @@ const MapScreen: React.FC<Props> = ({onGoBack, onSelectItem, initialSchedule, us
   const snapPoints = useMemo(() => ['25%', '50%'], []);
 
   const [selectedDate, setSelectedDate] = useState(getToday());
+
+  // 마운트 시 일정이 있는 가장 빠른 날짜로 초기화 (외부 일정 없을 때만)
+  useEffect(() => {
+    if (initialSchedule != null) {return;}
+    getScheduleList({userId, limit: 100})
+      .then(result => {
+        const dates = result?.schedules?.map((s: {date: string}) => s.date).filter(Boolean) ?? [];
+        if (dates.length === 0) {return;}
+        const today = getToday();
+        const sorted: string[] = [...dates].sort();
+        // 오늘 이후 가장 빠른 날짜 우선, 없으면 가장 최근 과거 날짜
+        const nearest = sorted.find(d => d >= today) ?? sorted[sorted.length - 1];
+        setSelectedDate(nearest);
+      })
+      .catch(() => {/* 실패 시 오늘 날짜 유지 */});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
   const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>(initialSchedule ?? []);
@@ -104,6 +121,29 @@ const MapScreen: React.FC<Props> = ({onGoBack, onSelectItem, initialSchedule, us
   const [heatmapLoading, setHeatmapLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [userCoords, setUserCoords] = useState<{latitude: number; longitude: number} | null>(null);
+  const centeredToUser = useRef(false);
+
+  // 일정이 없을 때 현재 위치로 지도 이동 (최초 1회)
+  useEffect(() => {
+    if (scheduleItems.length === 0 && !isLoading && userCoords && !centeredToUser.current) {
+      centeredToUser.current = true;
+      mapRef.current?.animateToRegion(
+        {
+          ...userCoords,
+          latitudeDelta: 0.05,
+          longitudeDelta: 0.05,
+        },
+        600,
+      );
+    }
+  }, [scheduleItems, isLoading, userCoords]);
+
+  const handleUserLocationChange = useCallback((event: {nativeEvent?: {coordinate?: {latitude: number; longitude: number}}}) => {
+    const coord = event.nativeEvent?.coordinate;
+    if (!coord) {return;}
+    setUserCoords({latitude: coord.latitude, longitude: coord.longitude});
+  }, []);
 
   const fetchSchedule = useCallback(async () => {
     // 외부에서 일정을 받은 경우 fetch 생략
@@ -178,6 +218,7 @@ const MapScreen: React.FC<Props> = ({onGoBack, onSelectItem, initialSchedule, us
   }, []);
 
   useEffect(() => {
+    centeredToUser.current = false;
     fetchSchedule();
     fetchRoute();
   }, [fetchSchedule, fetchRoute]);
@@ -346,7 +387,10 @@ const MapScreen: React.FC<Props> = ({onGoBack, onSelectItem, initialSchedule, us
         style={styles.map}
         initialRegion={getInitialRegion(initialSchedule)}
         mapType="standard"
-        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}>
+        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+        showsUserLocation={true}
+        showsMyLocationButton={false}
+        onUserLocationChange={handleUserLocationChange}>
         {/* UrlTile: Android 전용 (iOS는 Apple Maps 기본 타일 사용) */}
         {Platform.OS === 'android' && (
           <UrlTile
