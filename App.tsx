@@ -188,29 +188,42 @@ function AppContent() {
 
   // 일정 저장: TravelPlatform 서버에 저장
   const handleSaveSchedule = useCallback(async (item: ChatMessage) => {
-    try {
-      if (item.schedule?.length) {
-        const firstScheduledAt = item.schedule[0].scheduledAt;
-        const date = firstScheduledAt
-          ? firstScheduledAt.split('T')[0]
-          : new Date().toISOString().split('T')[0];
+    // schedule 배열이 없으면 저장 불가 안내
+    if (!item.schedule?.length) {
+      Alert.alert(
+        '저장 불가',
+        'AI가 구체적인 일정 데이터를 생성하지 않았습니다.\n"확정해줘" 또는 "이걸로 해줘"라고 말하면 저장 가능한 일정이 만들어집니다.',
+      );
+      return;
+    }
 
-        await saveSchedule({
-          date,
-          title: `AI 추천 일정 (${date})`,
-          sourceText: item.text,
-          items: item.schedule.map(s => ({
-            title: s.title,
-            latitude: s.latitude,
-            longitude: s.longitude,
-            time: s.time,
-            scheduledAt: s.scheduledAt,
-            category: s.category,
-            description: s.description,
-          })),
-        });
-      }
+    try {
+      // scheduledAt이 없으면 오늘 날짜 사용
+      const firstScheduledAt = item.schedule[0].scheduledAt;
+      const date = firstScheduledAt
+        ? firstScheduledAt.split('T')[0]
+        : new Date().toISOString().split('T')[0];
+
+      await saveSchedule({
+        date,
+        title: `AI 추천 일정 (${date})`,
+        sourceText: item.text,
+        items: item.schedule.map(s => ({
+          // 방어 코드: title 없으면 place 사용 (구버전 chatbot 응답 호환)
+          title: (s as any).title ?? (s as any).place ?? '장소',
+          latitude: s.latitude,
+          longitude: s.longitude,
+          time: s.time ?? '00:00',
+          scheduledAt: s.scheduledAt,
+          // category 없으면 attraction 기본값
+          category: s.category ?? 'attraction',
+          description: s.description,
+        })),
+      });
+
+      // 성공 시에만 저장됨 표시
       setChatSavedIds(prev => new Set([...prev, item.id]));
+      Alert.alert('저장 완료', '일정이 저장됐습니다. 지도 화면에서 확인할 수 있어요.');
     } catch (e) {
       console.warn('[Chat] 일정 저장 실패:', e);
       Alert.alert(
